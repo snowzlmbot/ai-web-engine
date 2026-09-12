@@ -37,20 +37,24 @@ if [ "$REMOTE_VERSION" = "$LOCAL_VERSION" ] && [ -x "$BINARY" ] && [ -f "$SKILL_
   exit 0
 fi
 
-binary_ready=1
+binary_ready=0
+if [ -x "$BINARY" ] && [ "$REMOTE_VERSION" = "$LOCAL_VERSION" ]; then
+  binary_ready=1
+fi
 if [ "$REMOTE_VERSION" != "$LOCAL_VERSION" ] || [ ! -x "$BINARY" ]; then
   BIN_NEW="$BINARY.new"
   rm -f "$BIN_NEW"
   if curl -fsSL --retry 2 --connect-timeout 15 "$ROOT_URL/releases/download/v$REMOTE_VERSION/ai-web-engine-android-arm64" -o "$BIN_NEW" && [ -s "$BIN_NEW" ] && chmod 755 "$BIN_NEW" && mv "$BIN_NEW" "$BINARY"; then
+    binary_ready=1
     log "[UPDATE] 引擎已更新至 $REMOTE_VERSION"
   else
     rm -f "$BIN_NEW"
-    binary_ready=0
     log "[WARN] 引擎下载/替换失败，保留旧版本"
   fi
 fi
 
-skill_ready=1
+skill_ready=0
+[ -f "$SKILL_DIR/SKILL.md" ] && [ -d "$SKILL_DIR/references" ] && skill_ready=1
 if [ ! -f "$SKILL_DIR/SKILL.md" ] || [ "$REMOTE_VERSION" != "$LOCAL_VERSION" ]; then
   SKILL_NEW="$BASE/skills/shortx-rule-creator.zip.new"
   STAGE="$BASE/skills/.shortx-rule-creator.staging"
@@ -65,30 +69,24 @@ if [ ! -f "$SKILL_DIR/SKILL.md" ] || [ "$REMOTE_VERSION" != "$LOCAL_VERSION" ]; 
     done || valid=0
     if [ "$valid" -eq 1 ] && unzip -oq "$SKILL_NEW" -d "$STAGE" && [ -f "$STAGE/shortx-rule-creator/SKILL.md" ] && [ -d "$STAGE/shortx-rule-creator/references" ]; then
       rm -rf "$SKILL_DIR"
-      if mv "$STAGE/shortx-rule-creator" "$SKILL_DIR"; then
-        chmod 700 "$SKILL_DIR" 2>/dev/null || true
-        log "[UPDATE] skills 已更新"
-      else
-        skill_ready=0
-        log "[WARN] skills 替换失败，保留旧版本"
-      fi
+      mv "$STAGE/shortx-rule-creator" "$SKILL_DIR" && skill_ready=1
+      chmod 700 "$SKILL_DIR" 2>/dev/null || true
+      log "[UPDATE] skills 已更新"
     else
-      skill_ready=0
       log "[WARN] skills 压缩包校验/解压失败，保留旧版本"
     fi
   else
-    skill_ready=0
     log "[WARN] skills 下载失败，保留旧版本"
   fi
   rm -f "$SKILL_NEW"
   rm -rf "$STAGE"
 fi
 
-if [ "$binary_ready" -eq 1 ] && [ "$skill_ready" -eq 1 ] && [ -x "$BINARY" ] && [ -f "$SKILL_DIR/SKILL.md" ]; then
+if [ "$binary_ready" -eq 1 ] && [ "$skill_ready" -eq 1 ]; then
   printf '{"version":"%s"}\n' "$REMOTE_VERSION" > "$BASE/config/version.json"
   chmod 600 "$BASE/config/version.json"
   log "[DONE] 初始化完成，版本 $REMOTE_VERSION"
 else
-  log "[ERROR] 初始化未完成：未更新版本标记，用户数据保持不变"
+  log "[ERROR] 初始化未完成：旧引擎或 skills 不可用"
   exit 1
 fi

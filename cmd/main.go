@@ -46,9 +46,7 @@ func main() {
 	if err != nil {
 		logger.Fatal(err)
 	}
-	if cfg.APIKeyEnv != "" {
-		cfg.APIKey = os.Getenv(cfg.APIKeyEnv)
-	}
+	cfg = config.ResolveAPIKey(cfg, os.Getenv)
 	keyPath := filepath.Join(filepath.Dir(*configPath), "master.key")
 	store, err := session.NewStore(*sessionsDir, keyPath)
 	if err != nil {

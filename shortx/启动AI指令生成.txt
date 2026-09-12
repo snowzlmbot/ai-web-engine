@@ -1,12 +1,12 @@
 {
   "actions": [{
     "@type": "type.googleapis.com/shortx.ShellCommand",
-    "command": "set -u\nBASE=/data/local/ai-instruction\nmkdir -p \"$BASE/scripts\"\ntmp=\"$BASE/scripts/start.sh.new\"\nif curl -fsSL --retry 2 --connect-timeout 15 https://raw.githubusercontent.com/snowzlmbot/ai-web-engine/main/scripts/start.sh -o \"$tmp\" && [ -s \"$tmp\" ]; then chmod 755 \"$tmp\" && mv \"$tmp\" \"$BASE/scripts/start.sh\"; else rm -f \"$tmp\"; printf '%s\\n' '[ERROR] start.sh 下载失败'; exit 1; fi\nexec \"$BASE/scripts/start.sh\"",
+    "command": "set -u\nBASE=/data/local/ai-instruction\nmkdir -p \"$BASE/scripts\"\ntmp=\"$BASE/scripts/start.sh.new\"\nif curl -fsSL --retry 2 --connect-timeout 15 https://raw.githubusercontent.com/snowzlmbot/ai-web-engine/main/scripts/start.sh -o \"$tmp\" && [ -s \"$tmp\" ]; then chmod 755 \"$tmp\" && mv \"$tmp\" \"$BASE/scripts/start.sh\"; else rm -f \"$tmp\"; printf '%s\\n' '[ERROR] start.sh 下载失败'; exit 1; fi\nexport AI_WEB_ENGINE_API_KEY=\"%模型key%\"\nexec \"$BASE/scripts/start.sh\"",
     "singleShot": true,
     "actionOnError": "Break",
     "id": "A-shortx-start"
   }],
-  "id":"DA-ai-web-engine-start-001","lastUpdateTime":"0","createTime":"0","author":{"name":"snowzlmbot"},"title":"启动 AI Web 引擎","description":"从云端拉取 start.sh，启动 127.0.0.1:6666 引擎并执行健康检查。","versionCode":"1","hook":{},"quit":{},"parameters":[]
+  "id":"DA-ai-web-engine-start-001","lastUpdateTime":"0","createTime":"0","author":{"name":"snowzlmbot"},"title":"启动 AI Web 引擎","description":"从云端拉取 start.sh，将 ShortX 环境变量 模型key 注入 AI_WEB_ENGINE_API_KEY，启动 127.0.0.1:6666 引擎并执行健康检查。","versionCode":"3","hook":{},"quit":{},"parameters":[]
 }
 ###------###
 {"type":"da"}

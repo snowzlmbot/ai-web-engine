@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"path"
 	"strings"
 	"sync"
@@ -15,7 +16,7 @@ import (
 	"github.com/snowzlmbot/ai-web-engine/internal/model"
 	"github.com/snowzlmbot/ai-web-engine/internal/session"
 	"github.com/snowzlmbot/ai-web-engine/internal/skills"
-	"github.com/snowzlmbot/ai-web-engine/internal/web"
+	"github.com/snowzlmbot/ai-web-engine/web"
 )
 
 type Server struct {
@@ -62,6 +63,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/config", s.configHandler)
 	mux.HandleFunc("/api/models", s.models)
 	mux.HandleFunc("/api/sessions", s.sessions)
+	mux.HandleFunc("/api/sessions/", s.sessions)
 	mux.HandleFunc("/api/skills", s.skillsHandler)
 	mux.HandleFunc("/api/skills/reload", s.reloadSkills)
 	mux.HandleFunc("/api/chat", s.chat)
@@ -113,6 +115,12 @@ func (s *Server) configHandler(w http.ResponseWriter, r *http.Request) {
 		if err := decodeJSON(r, &incoming); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
+		}
+		if incoming.APIKey != "" {
+			if envKey := os.Getenv("AI_WEB_ENGINE_API_KEY"); envKey != "" {
+				incoming.APIKey = ""
+				incoming.APIKeyEnv = "AI_WEB_ENGINE_API_KEY"
+			}
 		}
 		if incoming.APIKey == "" && incoming.APIKeyEnv == "" {
 			s.cfgMu.RLock()

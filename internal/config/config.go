@@ -71,6 +71,10 @@ func Save(path string, cfg Config) error {
 	if err := Validate(cfg); err != nil {
 		return err
 	}
+	if cfg.APIKeyEnv != "" {
+		// Environment-backed keys must never be persisted in JSON.
+		cfg.APIKey = ""
+	}
 	if cfg.Models == nil {
 		cfg.Models = []Model{}
 	}
@@ -132,6 +136,19 @@ func Validate(cfg Config) error {
 	return nil
 }
 
+func ResolveAPIKey(cfg Config, lookup func(string) string) Config {
+	if value := lookup("AI_WEB_ENGINE_API_KEY"); value != "" {
+		cfg.APIKey = value
+		cfg.APIKeyEnv = "AI_WEB_ENGINE_API_KEY"
+		return cfg
+	}
+	if cfg.APIKeyEnv != "" {
+		if value := lookup(cfg.APIKeyEnv); value != "" {
+			cfg.APIKey = value
+		}
+	}
+	return cfg
+}
 func Redacted(cfg Config) map[string]any {
 	masked := ""
 	if cfg.APIKey != "" || cfg.APIKeyEnv != "" {
