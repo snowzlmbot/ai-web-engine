@@ -7,9 +7,9 @@
     "root": ".",
     "purpose": "Android ARM64 static AI Web engine with embedded UI, SSE, sessions, skills, and OpenAI/Anthropic providers"
   },
-  "revision": 6,
+  "revision": 7,
   "phase": "completed",
-  "updatedAt": "2026-09-12T11:38:56Z",
+  "updatedAt": "2026-09-12T11:43:06Z",
   "updatedBy": {
     "runtime": "hermes",
     "profile": "default",
@@ -23,7 +23,9 @@
     "Published public repository and v1.0.0 ARM64 Release; hosted test/vet/build and remote asset read-back verified.",
     "Implemented Go standard-library engine with embedded web UI, SSE providers, encrypted sessions, skills loading, config API, and ShortX environment-key support",
     "Published public repository and v1.0.0 ARM64 Release asset",
-    "Synchronized the three cloud-managed ShortX commands into snowzlmbot/ShortX-Files main"
+    "Synchronized the three cloud-managed ShortX commands into snowzlmbot/ShortX-Files main",
+    "Go ARM64 static engine implemented and released v1.0.0",
+    "ShortX AI engine commands synchronized to snowzlmbot/ShortX-Files main"
   ],
   "inProgress": [],
   "next": [
@@ -103,6 +105,30 @@
       "ref": "docker-go-test-vet-arm64",
       "summary": "go test, go vet, and CGO_ENABLED=0 GOOS=linux GOARCH=arm64 build passed in Go 1.22 container",
       "verifiedAt": "2026-09-12T11:38:56Z"
+    },
+    {
+      "kind": "url",
+      "ref": "https://github.com/snowzlmbot/ai-web-engine/releases/tag/v1.0.0",
+      "summary": "Release v1.0.0 with verified ARM64 binary",
+      "verifiedAt": "2026-09-12T11:43:06Z"
+    },
+    {
+      "kind": "git",
+      "ref": "50aab76",
+      "summary": "ShortX-Files commands initially synced and verified",
+      "verifiedAt": "2026-09-12T11:43:06Z"
+    },
+    {
+      "kind": "git",
+      "ref": "ccc50ee",
+      "summary": "ShortX-Files ShellCommand compatibility fix and regenerated index pushed",
+      "verifiedAt": "2026-09-12T11:43:06Z"
+    },
+    {
+      "kind": "status",
+      "ref": "34691577875",
+      "summary": "Initial ShortX sync failure was fixed after reading generator error",
+      "verifiedAt": "2026-09-12T11:43:06Z"
     }
   ],
   "change": {
@@ -128,19 +154,19 @@
     }
   },
   "verification": {
-    "status": "passed",
-    "summary": "Published Release and synchronized ShortX commands verified; real Android device smoke test remains outstanding",
-    "checkedAt": "2026-09-12T11:38:56Z"
+    "status": "partial",
+    "summary": "Go tests/vet/ARM64 build and ShortX generator passed; real Android device smoke test remains pending",
+    "checkedAt": "2026-09-12T11:43:06Z"
   },
   "checkpoint": {
-    "id": "cp-000006",
-    "sequence": 6,
-    "reason": "shortx_commands_synced",
-    "at": "2026-09-12T11:38:56Z"
+    "id": "cp-000007",
+    "sequence": 7,
+    "reason": "shortx_commands_index_published",
+    "at": "2026-09-12T11:43:06Z"
   },
   "recovery": {
     "resumeHint": "Run fast sync, inspect live Git evidence, then continue the current goal.",
-    "lastSafeCheckpoint": "cp-000006",
+    "lastSafeCheckpoint": "cp-000007",
     "interrupted": false,
     "interruptionReason": null,
     "requiresRevalidation": false

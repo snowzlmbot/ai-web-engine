@@ -4,9 +4,9 @@
 
 - **Project:** Ai Web Engine (`ai-web-engine`)
 - **Phase:** `completed`
-- **Revision:** `6`
-- **Checkpoint:** `cp-000006`
-- **Updated:** `2026-09-12T11:38:56Z`
+- **Revision:** `7`
+- **Checkpoint:** `cp-000007`
+- **Updated:** `2026-09-12T11:43:06Z`
 - **Last writer:** `hermes/default`
 - **Last project change:** `2026-09-12T08:18:43Z`
 - **Latest change:** `main@aafcc657697c` — main@aafcc657697c; clean
@@ -29,6 +29,8 @@ Automatic state sync: main@aafcc657697c; clean; phase executing.
 - Implemented Go standard-library engine with embedded web UI, SSE providers, encrypted sessions, skills loading, config API, and ShortX environment-key support
 - Published public repository and v1.0.0 ARM64 Release asset
 - Synchronized the three cloud-managed ShortX commands into snowzlmbot/ShortX-Files main
+- Go ARM64 static engine implemented and released v1.0.0
+- ShortX AI engine commands synchronized to snowzlmbot/ShortX-Files main
 
 ## In progress
 
@@ -51,19 +53,19 @@ Automatic state sync: main@aafcc657697c; clean; phase executing.
 
 ## Verification
 
-- **Status:** `passed`
-- **Checked:** `2026-09-12T11:38:56Z`
-- **Summary:** Published Release and synchronized ShortX commands verified; real Android device smoke test remains outstanding
+- **Status:** `partial`
+- **Checked:** `2026-09-12T11:43:06Z`
+- **Summary:** Go tests/vet/ARM64 build and ShortX generator passed; real Android device smoke test remains pending
 
 ## Recent evidence
 
-- [command] `docker:golang:1.22` — go test ./... and go vet ./... passed; CGO_ENABLED=0 GOOS=linux GOARCH=arm64 build produced 5374104-byte binary (2026-09-12T11:21:16Z)
-- [command] `bash/node` — shell scripts and embedded Web UI syntax checks passed (2026-09-12T11:21:16Z)
-- [url] `https://github.com/snowzlmbot/ai-web-engine/actions/runs/34690844990` — GitHub hosted test/vet and ARM64 build succeeded (2026-09-12T11:24:43Z)
-- [url] `https://github.com/snowzlmbot/ai-web-engine/releases/tag/v1.0.0` — Public v1.0.0 Release with ai-web-engine-android-arm64 asset (2026-09-12T11:24:43Z)
 - [artifact] `ai-web-engine-android-arm64` — Remote read-back 5374104 bytes, ELF64 AArch64, sha256 97209e49a01ca107966e3294e02ceef3ebb354237ee9c18cf9c111b8204c2338 (2026-09-12T11:24:43Z)
 - [git] `3606f0e2b0508f274790379e7d4d6650114d3ed2` — ai-web-engine main implementation and flattened directory structure (2026-09-12T11:38:56Z)
 - [url] `https://github.com/snowzlmbot/ai-web-engine/releases/tag/v1.0.0` — public v1.0.0 release (2026-09-12T11:38:56Z)
 - [artifact] `ai-web-engine-android-arm64` — remote Release asset verified as ELF64 AArch64, 5374104 bytes (2026-09-12T11:38:56Z)
 - [git] `17b5c527e28435955300cc29856fca328ad37e5e` — ShortX-Files main contains synchronized three commands (2026-09-12T11:38:56Z)
 - [command] `docker-go-test-vet-arm64` — go test, go vet, and CGO_ENABLED=0 GOOS=linux GOARCH=arm64 build passed in Go 1.22 container (2026-09-12T11:38:56Z)
+- [url] `https://github.com/snowzlmbot/ai-web-engine/releases/tag/v1.0.0` — Release v1.0.0 with verified ARM64 binary (2026-09-12T11:43:06Z)
+- [git] `50aab76` — ShortX-Files commands initially synced and verified (2026-09-12T11:43:06Z)
+- [git] `ccc50ee` — ShortX-Files ShellCommand compatibility fix and regenerated index pushed (2026-09-12T11:43:06Z)
+- [status] `34691577875` — Initial ShortX sync failure was fixed after reading generator error (2026-09-12T11:43:06Z)
