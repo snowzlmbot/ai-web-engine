@@ -1,0 +1,23 @@
+{
+  "actions": [
+    {
+      "@type": "type.googleapis.com/shortx.ShellCommand",
+      "command": "set -eu\nBASE=/data/local/ai-instruction\nmkdir -p \"$BASE/scripts\"\ntmp=\"$BASE/scripts/init.sh.new\"\ncurl -fsSL --retry 2 --connect-timeout 15 https://raw.githubusercontent.com/snowzlmbot/ai-web-engine/main/scripts/init.sh -o \"$tmp\" && [ -s \"$tmp\" ] && chmod 755 \"$tmp\" && mv \"$tmp\" \"$BASE/scripts/init.sh\" || { rm -f \"$tmp\"; exit 1; }\nexec \"$BASE/scripts/init.sh\"",
+      "singleShot": true,
+      "actionOnError": "Break",
+      "id": "A-shortx-init"
+    }
+  ],
+  "id": "DA-ai-web-engine-init-001",
+  "lastUpdateTime": "0",
+  "createTime": "0",
+  "author": {"name":"snowzlmbot"},
+  "title": "AI Web 引擎首次环境初始化",
+  "description": "从云端拉取幂等 init.sh，初始化 Android ARM64 引擎、配置、skills 和保留会话目录。",
+  "versionCode": "1",
+  "hook": {},
+  "quit": {},
+  "parameters": []
+}
+###------###
+{"type":"da"}
