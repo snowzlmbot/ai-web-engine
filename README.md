@@ -83,7 +83,7 @@ export AI_WEB_ENGINE_API_KEY="%模型key%"
 Go 引擎优先读取 `AI_WEB_ENGINE_API_KEY`；`model_config.json` 只保存 `apiKeyEnv`，不会保存实际 Key。Web 设置页在该环境变量存在时也不会把输入 Key 写回配置文件。
 
 
-可导入的三条云端脚本拉取指令位于 `shortx/`：
+ShortX 三条动作使用仓库索引生成器支持的 `type.googleapis.com/ShellCommand` 类型，并均以 `.new` 临时文件校验后替换云端脚本。
 
 - `shortx/AI生成指令首次环境初始化.txt`
 - `shortx/启动AI指令生成.txt`

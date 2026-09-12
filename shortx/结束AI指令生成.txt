@@ -1,6 +1,6 @@
 {
   "actions": [{
-    "@type": "type.googleapis.com/shortx.ShellCommand",
+    "@type": "type.googleapis.com/ShellCommand",
     "command": "set -u\nBASE=/data/local/ai-instruction\nmkdir -p \"$BASE/scripts\"\ntmp=\"$BASE/scripts/stop.sh.new\"\nurl=\"https://raw.githubusercontent.com/snowzlmbot/ai-web-engine/main/scripts/stop.sh?shortx_stop=$(date +%s)-$$\"\nif curl -fsSL --retry 2 --connect-timeout 15 \"$url\" -o \"$tmp\" && [ -s \"$tmp\" ] && grep -q 'ai-web-engine' \"$tmp\" && grep -q 'PIDFILE' \"$tmp\" && sh -n \"$tmp\" && chmod 755 \"$tmp\" && mv \"$tmp\" \"$BASE/scripts/stop.sh\"; then\n  exec \"$BASE/scripts/stop.sh\"\nelse\n  rm -f \"$tmp\"\n  printf '%s\\n' '[ERROR] stop.sh 下载到的不是有效最新脚本，已拒绝执行'\n  exit 1\nfi",
     "singleShot": true,
     "actionOnError": "Continue",

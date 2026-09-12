@@ -1,7 +1,7 @@
 {
   "actions": [
     {
-      "@type": "type.googleapis.com/shortx.ShellCommand",
+      "@type": "type.googleapis.com/ShellCommand",
       "command": "set -eu\nBASE=/data/local/ai-instruction\nmkdir -p \"$BASE/scripts\"\ntmp=\"$BASE/scripts/init.sh.new\"\nurl=\"https://raw.githubusercontent.com/snowzlmbot/ai-web-engine/main/scripts/init.sh?shortx_init=$(date +%s)-$$\"\nif curl -fsSL --retry 2 --connect-timeout 15 \"$url\" -o \"$tmp\" && [ -s \"$tmp\" ] && grep -q 'RELEASE_BASE_URL=' \"$tmp\" && grep -q 'github.com/snowzlmbot/ai-web-engine/releases/download' \"$tmp\" && grep -q 'unzip -l' \"$tmp\" && grep -q 'unzip -t' \"$tmp\" && grep -q 'start.sh' \"$tmp\" && grep -q 'stop.sh' \"$tmp\" && sh -n \"$tmp\" && chmod 755 \"$tmp\" && mv \"$tmp\" \"$BASE/scripts/init.sh\"; then\n  exec \"$BASE/scripts/init.sh\"\nelse\n  rm -f \"$tmp\"\n  printf '%s\\n' '[ERROR] init.sh 下载到的不是最新 Android 初始化脚本，已拒绝执行旧缓存'\n  exit 1\nfi",
       "singleShot": true,
       "actionOnError": "Break",

@@ -1,6 +1,6 @@
 {
   "actions": [{
-    "@type": "type.googleapis.com/shortx.ShellCommand",
+    "@type": "type.googleapis.com/ShellCommand",
     "command": "set -u\nBASE=/data/local/ai-instruction\nmkdir -p \"$BASE/scripts\"\ntmp=\"$BASE/scripts/start.sh.new\"\nurl=\"https://raw.githubusercontent.com/snowzlmbot/ai-web-engine/main/scripts/start.sh?shortx_start=$(date +%s)-$$\"\nif curl -fsSL --retry 2 --connect-timeout 15 \"$url\" -o \"$tmp\" && [ -s \"$tmp\" ] && grep -q '127.0.0.1:6666' \"$tmp\" && grep -q 'android.intent.action.VIEW' \"$tmp\" && sh -n \"$tmp\" && chmod 755 \"$tmp\" && mv \"$tmp\" \"$BASE/scripts/start.sh\"; then\n  export AI_WEB_ENGINE_API_KEY=\"%模型key%\"\n  exec \"$BASE/scripts/start.sh\"\nelse\n  rm -f \"$tmp\"\n  printf '%s\\n' '[ERROR] start.sh 下载到的不是有效最新脚本，已拒绝执行'\n  exit 1\nfi",
     "singleShot": true,
     "actionOnError": "Break",
