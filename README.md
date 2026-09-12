@@ -46,7 +46,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
 ```
 
 
-`version.json` 当前为 `1.0.2`。发布流程会创建 `v1.0.2` Release，Android 初始化脚本从 GitHub Release 地址下载 `ai-web-engine-android-arm64`；源码版本信息仍从 Raw 地址读取。
+`version.json` 当前为 `1.0.3`。发布流程会创建 `v1.0.3` Release；初始化会一次性下载并验证 Android ARM64 引擎、skills ZIP、`start.sh` 和 `stop.sh`。
 
 ## Android 部署
 
@@ -58,7 +58,7 @@ sh scripts/init.sh
 sh scripts/start.sh
 ```
 
-`scripts/init.sh` 的真实验收条件包括：Android root、ARM64 ABI、可写存储、依赖命令、有效 ELF64/AArch64 引擎、完整 `shortx-rule-creator` skill（SKILL.md 加六个 references）、32 字节 `master.key`、600 权限配置和最终版本标记。下载资源时使用独立地址：`version.json` 从 Raw 地址读取，`ai-web-engine-android-arm64` 从 `https://github.com/snowzlmbot/ai-web-engine/releases/download/v<version>/` 下载，避免把 Release 路径错误拼接到 `raw.githubusercontent.com` 导致 404。任何一步失败都返回非零并保留旧资源；成功后 `scripts/start.sh` 会启动引擎，健康检查通过后调用 Android 默认浏览器打开 `http://127.0.0.1:6666`。
+`scripts/init.sh` 的 ZIP 校验兼容 Android 常见的 `unzip` 实现：优先使用 `unzip -Z1`，不支持时回退到标准 `unzip -l`，并额外运行 `unzip -t`、路径安全检查和解压后完整性检查。初始化会同时准备引擎、skills、`start.sh`、`stop.sh`、配置模板、`master.key` 和目录；所有资源先进入临时文件，全部通过后统一提交，失败则保留旧资源且不写完成标记。
 
 ## API
 

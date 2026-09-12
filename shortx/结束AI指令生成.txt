@@ -1,12 +1,12 @@
 {
   "actions": [{
     "@type": "type.googleapis.com/shortx.ShellCommand",
-    "command": "set -u\nBASE=/data/local/ai-instruction\nmkdir -p \"$BASE/scripts\"\ntmp=\"$BASE/scripts/stop.sh.new\"\nif curl -fsSL --retry 2 --connect-timeout 15 https://raw.githubusercontent.com/snowzlmbot/ai-web-engine/main/scripts/stop.sh -o \"$tmp\" && [ -s \"$tmp\" ]; then chmod 755 \"$tmp\" && mv \"$tmp\" \"$BASE/scripts/stop.sh\"; else rm -f \"$tmp\"; printf '%s\\n' '[ERROR] stop.sh 下载失败'; exit 1; fi\nexec \"$BASE/scripts/stop.sh\"",
+    "command": "set -u\nBASE=/data/local/ai-instruction\nmkdir -p \"$BASE/scripts\"\ntmp=\"$BASE/scripts/stop.sh.new\"\nurl=\"https://raw.githubusercontent.com/snowzlmbot/ai-web-engine/main/scripts/stop.sh?shortx_stop=$(date +%s)-$$\"\nif curl -fsSL --retry 2 --connect-timeout 15 \"$url\" -o \"$tmp\" && [ -s \"$tmp\" ] && grep -q 'ai-web-engine' \"$tmp\" && grep -q 'PIDFILE' \"$tmp\" && sh -n \"$tmp\" && chmod 755 \"$tmp\" && mv \"$tmp\" \"$BASE/scripts/stop.sh\"; then\n  exec \"$BASE/scripts/stop.sh\"\nelse\n  rm -f \"$tmp\"\n  printf '%s\\n' '[ERROR] stop.sh 下载到的不是有效最新脚本，已拒绝执行'\n  exit 1\nfi",
     "singleShot": true,
     "actionOnError": "Continue",
     "id": "A-shortx-stop"
   }],
-  "id":"DA-ai-web-engine-stop-001","lastUpdateTime":"0","createTime":"0","author":{"name":"snowzlmbot"},"title":"结束 AI Web 引擎","description":"只停止本指令启动且 PID/executable 校验一致的 ai-web-engine，不使用宽泛 pkill，保留配置与会话。","versionCode":"2","hook":{},"quit":{},"parameters":[]
+  "id":"DA-ai-web-engine-stop-001","lastUpdateTime":"0","createTime":"0","author":{"name":"snowzlmbot"},"title":"结束 AI Web 引擎","description":"只停止本指令启动且 PID/executable 校验一致的 ai-web-engine，不使用宽泛 pkill，保留配置与会话。","versionCode":"3","hook":{},"quit":{},"parameters":[]
 }
 ###------###
 {"type":"da"}
