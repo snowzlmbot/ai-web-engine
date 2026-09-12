@@ -13,7 +13,7 @@ import (
 	"github.com/snowzlmbot/ai-web-engine/internal/session"
 )
 
-var version = "1.0.0"
+var version = "1.0.1"
 
 func main() {
 	host := flag.String("host", "127.0.0.1", "bind host (loopback by default)")

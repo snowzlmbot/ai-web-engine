@@ -13,8 +13,8 @@
   "createTime": "0",
   "author": {"name":"snowzlmbot"},
   "title": "AI Web 引擎首次环境初始化",
-  "description": "从云端拉取幂等 init.sh，初始化 Android ARM64 引擎、配置、skills 和保留会话目录。",
-  "versionCode": "1",
+  "description": "ShortX 首次初始化指令会从云端拉取并执行 `init.sh`。该脚本只在 Android Root ARM64 设备上继续，真实下载并安装 Release 二进制和完整 skill；它会校验 ELF64/AArch64、六个 references、`master.key` 32 字节以及配置和目录。只有所有检查通过才会写入版本完成标记。",
+  "versionCode": "2",
   "hook": {},
   "quit": {},
   "parameters": []

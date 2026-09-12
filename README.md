@@ -46,7 +46,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
 ```
 
 
-GitHub Actions 在 `v*` tag 上执行测试、`go vet`、ARM64 静态构建并创建 Release，资产名为 `ai-web-engine-android-arm64`。
+`version.json` 当前为 `1.0.1`。发布流程会创建 `v1.0.1` Release，Android 初始化脚本会根据该版本下载 `ai-web-engine-android-arm64`。
 
 ## Android 部署
 
@@ -58,7 +58,7 @@ sh scripts/init.sh
 sh scripts/start.sh
 ```
 
-脚本会从当前仓库 Raw 地址获取 `version.json`、Release 二进制和 `skills/shortx-rule-creator.zip`。初始化不会覆盖 `config/model_config.json`、`config/master.key` 或 `sessions/`。
+`scripts/init.sh` 的真实验收条件包括：Android root、ARM64 ABI、可写存储、依赖命令、有效 ELF64/AArch64 引擎、完整 `shortx-rule-creator` skill（SKILL.md 加六个 references）、32 字节 `master.key`、600 权限配置和最终版本标记。任何一步失败都返回非零并保留旧资源；成功后 `scripts/start.sh` 会启动引擎，健康检查通过后调用 Android 默认浏览器打开 `http://127.0.0.1:6666`。
 
 ## API
 
