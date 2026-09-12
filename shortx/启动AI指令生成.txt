@@ -1,12 +1,12 @@
 {
   "actions": [{
     "@type": "type.googleapis.com/ShellCommand",
-    "command": "set -u\nBASE=/data/local/ai-instruction\nmkdir -p \"$BASE/scripts\"\ntmp=\"$BASE/scripts/start.sh.new\"\nurl=\"https://raw.githubusercontent.com/snowzlmbot/ai-web-engine/main/scripts/start.sh?shortx_start=$(date +%s)-$$\"\nif curl -fsSL --retry 2 --connect-timeout 15 \"$url\" -o \"$tmp\" && [ -s \"$tmp\" ] && grep -q '127.0.0.1:6666' \"$tmp\" && grep -q 'android.intent.action.VIEW' \"$tmp\" && sh -n \"$tmp\" && chmod 755 \"$tmp\" && mv \"$tmp\" \"$BASE/scripts/start.sh\"; then\n  export AI_WEB_ENGINE_API_KEY=\"%模型key%\"\n  exec \"$BASE/scripts/start.sh\"\nelse\n  rm -f \"$tmp\"\n  printf '%s\\n' '[ERROR] start.sh 下载到的不是有效最新脚本，已拒绝执行'\n  exit 1\nfi",
+    "command": "set -u\nBASE=/data/local/ai-instruction\nmkdir -p \"$BASE/scripts\"\ntmp=\"$BASE/scripts/start.sh.new\"\nurl=\"https://raw.githubusercontent.com/snowzlmbot/ai-web-engine/main/scripts/start.sh?shortx_start=$(date +%s)-$$\"\nif curl -fsSL --retry 2 --connect-timeout 15 \"$url\" -o \"$tmp\" && [ -s \"$tmp\" ] && grep -q 'PORT=6688' \"$tmp\" && grep -q 'android.intent.action.VIEW' \"$tmp\" && sh -n \"$tmp\" && chmod 755 \"$tmp\" && mv \"$tmp\" \"$BASE/scripts/start.sh\"; then\n  export AI_WEB_ENGINE_API_KEY=\"%模型key%\"\n  exec \"$BASE/scripts/start.sh\"\nelse\n  rm -f \"$tmp\"\n  printf '%s\\n' '[ERROR] start.sh 下载到的不是有效最新脚本，已拒绝执行'\n  exit 1\nfi",
     "singleShot": true,
     "actionOnError": "Break",
     "id": "A-shortx-start"
   }],
-  "id":"DA-ai-web-engine-start-001","lastUpdateTime":"0","createTime":"0","author":{"name":"snowzlmbot"},"title":"启动 AI Web 引擎","description":"从云端拉取 start.sh，将 ShortX 环境变量 模型key 注入 AI_WEB_ENGINE_API_KEY，启动 127.0.0.1:6666 引擎并执行健康检查。","versionCode":"4","hook":{},"quit":{},"parameters":[]
+  "id":"DA-ai-web-engine-start-001","lastUpdateTime":"0","createTime":"0","author":{"name":"snowzlmbot"},"title":"启动 AI Web 引擎","description":"从云端拉取 start.sh，将 ShortX 环境变量 模型key 注入 AI_WEB_ENGINE_API_KEY，启动 127.0.0.1:6688 引擎并执行健康检查。","versionCode":"7","hook":{},"quit":{},"parameters":[]
 }
 ###------###
 {"type":"da"}

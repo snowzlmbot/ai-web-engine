@@ -6,7 +6,7 @@
     "actionOnError": "Continue",
     "id": "A-shortx-stop"
   }],
-  "id":"DA-ai-web-engine-stop-001","lastUpdateTime":"0","createTime":"0","author":{"name":"snowzlmbot"},"title":"结束 AI Web 引擎","description":"只停止本指令启动且 PID/executable 校验一致的 ai-web-engine，不使用宽泛 pkill，保留配置与会话。","versionCode":"3","hook":{},"quit":{},"parameters":[]
+  "id":"DA-ai-web-engine-stop-001","lastUpdateTime":"0","createTime":"0","author":{"name":"snowzlmbot"},"title":"结束 AI Web 引擎","description":"只停止本指令启动且 PID/executable 校验一致的 ai-web-engine，不使用宽泛 pkill，保留配置与会话。","versionCode":"6","hook":{},"quit":{},"parameters":[]
 }
 ###------###
 {"type":"da"}

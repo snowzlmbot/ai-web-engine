@@ -13,11 +13,11 @@ import (
 	"github.com/snowzlmbot/ai-web-engine/internal/session"
 )
 
-var version = "1.0.3"
+var version = "1.0.5"
 
 func main() {
 	host := flag.String("host", "127.0.0.1", "bind host (loopback by default)")
-	port := flag.Int("port", 6666, "listen port")
+	port := flag.Int("port", 6688, "listen port")
 	skillsDir := flag.String("skills-dir", "skills", "skills root")
 	configPath := flag.String("config", filepath.Join("config", "model_config.json"), "model config path")
 	sessionsDir := flag.String("sessions-dir", "sessions", "encrypted sessions directory")

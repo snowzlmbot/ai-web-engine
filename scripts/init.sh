@@ -171,7 +171,7 @@ else
   fail "skills 下载失败；旧 skills 保持不变"
 fi
 log "[FETCH] 下载启动和停止脚本"
-if ! curl -fsSL --retry 2 --connect-timeout 15 "$(resource_url "$START_URL")" -o "$START_NEW" || ! chmod 755 "$START_NEW" || ! script_valid "$START_NEW"; then
+if ! curl -fsSL --retry 2 --connect-timeout 15 "$(resource_url "$START_URL")" -o "$START_NEW" || ! chmod 755 "$START_NEW" || ! script_valid "$START_NEW" || ! grep -q 'PORT=6688' "$START_NEW"; then
   rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW"
   fail "start.sh 下载或校验失败；旧启动环境保持不变"
 fi

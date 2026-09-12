@@ -1,6 +1,6 @@
 # ai-web-engine
 
-一个面向 Android Root 的本地 AI Web 引擎：纯 Go 标准库、`CGO_ENABLED=0`、Web UI 通过 `go:embed` 内嵌，默认只监听 `127.0.0.1:6666`。
+一个面向 Android Root 的本地 AI Web 引擎：纯 Go 标准库、`CGO_ENABLED=0`、Web UI 通过 `go:embed` 内嵌，默认只监听 `127.0.0.1:6688`。
 
 ## 功能
 
@@ -46,7 +46,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
 ```
 
 
-`version.json` 当前为 `1.0.3`。发布流程会创建 `v1.0.3` Release；初始化会一次性下载并验证 Android ARM64 引擎、skills ZIP、`start.sh` 和 `stop.sh`。
+`version.json` 当前为 `1.0.5`。发布流程会创建 `v1.0.5` Release；初始化会一次性下载并验证 Android ARM64 引擎、skills ZIP、`start.sh` 和 `stop.sh`，启动脚本使用浏览器安全端口 `6688`。
 
 ## Android 部署
 
@@ -58,7 +58,9 @@ sh scripts/init.sh
 sh scripts/start.sh
 ```
 
-`scripts/init.sh` 的 ZIP 校验兼容 Android 常见的 `unzip` 实现：优先使用 `unzip -Z1`，不支持时回退到标准 `unzip -l`，并额外运行 `unzip -t`、路径安全检查和解压后完整性检查。初始化会同时准备引擎、skills、`start.sh`、`stop.sh`、配置模板、`master.key` 和目录；所有资源先进入临时文件，全部通过后统一提交，失败则保留旧资源且不写完成标记。
+启动后会监听并打开 `http://127.0.0.1:6688`；不要再使用旧的 `6666`。
+
+`scripts/init.sh` 的 ZIP 校验兼容 Android 常见的 `unzip` 实现：优先使用 `unzip -Z1`，不支持时回退到标准 `unzip -l`，并额外运行 `unzip -t`、路径安全检查和解压后完整性检查。初始化会同时准备引擎、skills、`start.sh`、`stop.sh`、配置模板、`master.key` 和目录；所有资源先进入临时文件，全部通过后统一提交，失败则保留旧资源且不写完成标记。`scripts/start.sh` 固定使用浏览器允许的本机端口 `6688`。`6666` 会被 Chromium/Chrome 拒绝并显示 `ERR_UNSAFE_PORT`；启动时如果 PID 文件对应旧的 6666 引擎，会先按可执行文件精确校验并安全迁移。
 
 ## API
 
