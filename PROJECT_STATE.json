@@ -7,9 +7,9 @@
     "root": ".",
     "purpose": "Android ARM64 static AI Web engine with embedded UI, SSE, sessions, skills, and OpenAI/Anthropic providers"
   },
-  "revision": 7,
+  "revision": 8,
   "phase": "completed",
-  "updatedAt": "2026-09-12T11:43:06Z",
+  "updatedAt": "2026-09-12T11:56:31Z",
   "updatedBy": {
     "runtime": "hermes",
     "profile": "default",
@@ -25,7 +25,8 @@
     "Published public repository and v1.0.0 ARM64 Release asset",
     "Synchronized the three cloud-managed ShortX commands into snowzlmbot/ShortX-Files main",
     "Go ARM64 static engine implemented and released v1.0.0",
-    "ShortX AI engine commands synchronized to snowzlmbot/ShortX-Files main"
+    "ShortX AI engine commands synchronized to snowzlmbot/ShortX-Files main",
+    "ShortX-Files PR #4 merged and final index read-back verified"
   ],
   "inProgress": [],
   "next": [
@@ -129,6 +130,24 @@
       "ref": "34691577875",
       "summary": "Initial ShortX sync failure was fixed after reading generator error",
       "verifiedAt": "2026-09-12T11:43:06Z"
+    },
+    {
+      "kind": "url",
+      "ref": "https://github.com/snowzlmbot/ShortX-Files/pull/4",
+      "summary": "Index update PR merged successfully",
+      "verifiedAt": "2026-09-12T11:56:31Z"
+    },
+    {
+      "kind": "url",
+      "ref": "https://raw.githubusercontent.com/snowzlmbot/ShortX-Files/main/index.json",
+      "summary": "Final index contains 21 directActions, 51 rules, and 2 codeLibraries; new AI Web Engine commands present and legacy commands absent",
+      "verifiedAt": "2026-09-12T11:56:31Z"
+    },
+    {
+      "kind": "git",
+      "ref": "6ce698e",
+      "summary": "ShortX-Files main after merged index PR",
+      "verifiedAt": "2026-09-12T11:56:31Z"
     }
   ],
   "change": {
@@ -155,18 +174,18 @@
   },
   "verification": {
     "status": "partial",
-    "summary": "Go tests/vet/ARM64 build and ShortX generator passed; real Android device smoke test remains pending",
-    "checkedAt": "2026-09-12T11:43:06Z"
+    "summary": "Go tests/vet/ARM64 Release and ShortX command/index verification passed; real Android device smoke test remains pending",
+    "checkedAt": "2026-09-12T11:56:31Z"
   },
   "checkpoint": {
-    "id": "cp-000007",
-    "sequence": 7,
-    "reason": "shortx_commands_index_published",
-    "at": "2026-09-12T11:43:06Z"
+    "id": "cp-000008",
+    "sequence": 8,
+    "reason": "shortx_index_final_verified",
+    "at": "2026-09-12T11:56:31Z"
   },
   "recovery": {
     "resumeHint": "Run fast sync, inspect live Git evidence, then continue the current goal.",
-    "lastSafeCheckpoint": "cp-000007",
+    "lastSafeCheckpoint": "cp-000008",
     "interrupted": false,
     "interruptionReason": null,
     "requiresRevalidation": false

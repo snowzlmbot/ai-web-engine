@@ -4,9 +4,9 @@
 
 - **Project:** Ai Web Engine (`ai-web-engine`)
 - **Phase:** `completed`
-- **Revision:** `7`
-- **Checkpoint:** `cp-000007`
-- **Updated:** `2026-09-12T11:43:06Z`
+- **Revision:** `8`
+- **Checkpoint:** `cp-000008`
+- **Updated:** `2026-09-12T11:56:31Z`
 - **Last writer:** `hermes/default`
 - **Last project change:** `2026-09-12T08:18:43Z`
 - **Latest change:** `main@aafcc657697c` — main@aafcc657697c; clean
@@ -31,6 +31,7 @@ Automatic state sync: main@aafcc657697c; clean; phase executing.
 - Synchronized the three cloud-managed ShortX commands into snowzlmbot/ShortX-Files main
 - Go ARM64 static engine implemented and released v1.0.0
 - ShortX AI engine commands synchronized to snowzlmbot/ShortX-Files main
+- ShortX-Files PR #4 merged and final index read-back verified
 
 ## In progress
 
@@ -54,14 +55,11 @@ Automatic state sync: main@aafcc657697c; clean; phase executing.
 ## Verification
 
 - **Status:** `partial`
-- **Checked:** `2026-09-12T11:43:06Z`
-- **Summary:** Go tests/vet/ARM64 build and ShortX generator passed; real Android device smoke test remains pending
+- **Checked:** `2026-09-12T11:56:31Z`
+- **Summary:** Go tests/vet/ARM64 Release and ShortX command/index verification passed; real Android device smoke test remains pending
 
 ## Recent evidence
 
-- [artifact] `ai-web-engine-android-arm64` — Remote read-back 5374104 bytes, ELF64 AArch64, sha256 97209e49a01ca107966e3294e02ceef3ebb354237ee9c18cf9c111b8204c2338 (2026-09-12T11:24:43Z)
-- [git] `3606f0e2b0508f274790379e7d4d6650114d3ed2` — ai-web-engine main implementation and flattened directory structure (2026-09-12T11:38:56Z)
-- [url] `https://github.com/snowzlmbot/ai-web-engine/releases/tag/v1.0.0` — public v1.0.0 release (2026-09-12T11:38:56Z)
 - [artifact] `ai-web-engine-android-arm64` — remote Release asset verified as ELF64 AArch64, 5374104 bytes (2026-09-12T11:38:56Z)
 - [git] `17b5c527e28435955300cc29856fca328ad37e5e` — ShortX-Files main contains synchronized three commands (2026-09-12T11:38:56Z)
 - [command] `docker-go-test-vet-arm64` — go test, go vet, and CGO_ENABLED=0 GOOS=linux GOARCH=arm64 build passed in Go 1.22 container (2026-09-12T11:38:56Z)
@@ -69,3 +67,6 @@ Automatic state sync: main@aafcc657697c; clean; phase executing.
 - [git] `50aab76` — ShortX-Files commands initially synced and verified (2026-09-12T11:43:06Z)
 - [git] `ccc50ee` — ShortX-Files ShellCommand compatibility fix and regenerated index pushed (2026-09-12T11:43:06Z)
 - [status] `34691577875` — Initial ShortX sync failure was fixed after reading generator error (2026-09-12T11:43:06Z)
+- [url] `https://github.com/snowzlmbot/ShortX-Files/pull/4` — Index update PR merged successfully (2026-09-12T11:56:31Z)
+- [url] `https://raw.githubusercontent.com/snowzlmbot/ShortX-Files/main/index.json` — Final index contains 21 directActions, 51 rules, and 2 codeLibraries; new AI Web Engine commands present and legacy commands absent (2026-09-12T11:56:31Z)
+- [git] `6ce698e` — ShortX-Files main after merged index PR (2026-09-12T11:56:31Z)
