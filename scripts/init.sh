@@ -4,7 +4,8 @@
 set -u
 
 BASE=${AI_WEB_ENGINE_BASE:-/data/local/ai-instruction}
-ROOT_URL=${AI_WEB_ENGINE_ROOT_URL:-https://raw.githubusercontent.com/snowzlmbot/ai-web-engine/main}
+RAW_BASE_URL=${AI_WEB_ENGINE_RAW_BASE_URL:-https://raw.githubusercontent.com/snowzlmbot/ai-web-engine/main}
+RELEASE_BASE_URL=${AI_WEB_ENGINE_RELEASE_BASE_URL:-https://github.com/snowzlmbot/ai-web-engine/releases/download}
 SKILLS_URL=${AI_WEB_ENGINE_SKILLS_URL:-https://raw.githubusercontent.com/snowzlmbot/ShortX-Files/main/skills/shortx-rule-creator.zip}
 
 log() { printf '%s\n' "$1"; }
@@ -93,7 +94,7 @@ else
   chmod 600 "$MASTER_KEY" 2>/dev/null || true
 fi
 
-REMOTE_VERSION=$(curl -fsSL --retry 2 --connect-timeout 15 "$ROOT_URL/version.json" 2>/dev/null | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([0-9][0-9A-Za-z._-]*\)".*/\1/p')
+REMOTE_VERSION=$(curl -fsSL --retry 2 --connect-timeout 15 "$RAW_BASE_URL/version.json" 2>/dev/null | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([0-9][0-9A-Za-z._-]*\)".*/\1/p')
 [ -n "$REMOTE_VERSION" ] || fail "无法读取远端版本"
 LOCAL_VERSION=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$BASE/config/version.json" 2>/dev/null || true)
 BINARY="$BASE/bin/ai-web-engine"
@@ -113,7 +114,7 @@ rm -f "$BIN_NEW" "$SKILL_NEW" "$BIN_OLD"
 rm -rf "$STAGE" "$SKILL_OLD"
 
 log "[FETCH] 下载 Android ARM64 引擎 $REMOTE_VERSION"
-if ! curl -fsSL --retry 2 --connect-timeout 15 "$ROOT_URL/releases/download/v$REMOTE_VERSION/ai-web-engine-android-arm64" -o "$BIN_NEW" || ! chmod 755 "$BIN_NEW" || ! binary_valid "$BIN_NEW"; then
+if ! curl -fsSL --retry 2 --connect-timeout 15 "$RELEASE_BASE_URL/v$REMOTE_VERSION/ai-web-engine-android-arm64" -o "$BIN_NEW" || ! chmod 755 "$BIN_NEW" || ! binary_valid "$BIN_NEW"; then
   rm -f "$BIN_NEW"
   fail "Android ARM64 引擎下载或 ELF/AArch64 校验失败；旧引擎保持不变"
 fi
