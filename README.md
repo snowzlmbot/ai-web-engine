@@ -46,7 +46,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
 ```
 
 
-`version.json` 当前为 `1.0.5`。发布流程会创建 `v1.0.5` Release；初始化会一次性下载并验证 Android ARM64 引擎、skills ZIP、`start.sh` 和 `stop.sh`，启动脚本使用浏览器安全端口 `6688`。
+`version.json` 当前为 `1.0.6`。发布流程会创建 `v1.0.6` Release；初始化会一次性下载并验证 Android ARM64 引擎、skills ZIP、`start.sh` 和 `stop.sh`，启动脚本使用浏览器安全端口 `6688`。
 
 ## Android 部署
 

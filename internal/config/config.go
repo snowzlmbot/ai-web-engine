@@ -71,10 +71,10 @@ func Save(path string, cfg Config) error {
 	if err := Validate(cfg); err != nil {
 		return err
 	}
-	if cfg.APIKeyEnv != "" {
-		// Environment-backed keys must never be persisted in JSON.
-		cfg.APIKey = ""
-	}
+	// API keys are runtime secrets. Never persist them in model_config.json;
+	// ShortX injects the preferred key through AI_WEB_ENGINE_API_KEY and the
+	// web form key, when supplied, remains in the current process only.
+	cfg.APIKey = ""
 	if cfg.Models == nil {
 		cfg.Models = []Model{}
 	}

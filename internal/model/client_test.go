@@ -2,6 +2,8 @@ package model
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -80,5 +82,58 @@ func TestParseSSE(t *testing.T) {
 	}
 	if got != "hi" || !done {
 		t.Fatalf("parsed SSE = %q, done=%v", got, done)
+	}
+}
+
+func TestClientStreamOverHTTPS(t *testing.T) {
+	var gotAuth string
+	var gotPath string
+	var gotModel string
+	provider := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		gotPath = r.URL.Path
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		gotModel, _ = payload["model"].(string)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"ShortX \"}}]}\n\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"Rule\"}}]}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer provider.Close()
+
+	cfg := config.Config{Endpoint: provider.URL, Protocol: config.ProtocolOpenAI, APIKey: "test-key"}
+	client := &Client{HTTP: provider.Client()}
+	var text string
+	var done bool
+	if err := client.Stream(cfg, "demo-model", "low", "skill", []session.Message{{Role: "user", Content: "hello"}}, func(delta Delta) error {
+		text += delta.Content
+		done = done || delta.Done
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != "/v1/chat/completions" || gotAuth != "Bearer test-key" || gotModel != "demo-model" {
+		t.Fatalf("request path/auth/model = %q/%q/%q", gotPath, gotAuth, gotModel)
+	}
+	if text != "ShortX Rule" || !done {
+		t.Fatalf("stream = %q, done=%v", text, done)
+	}
+}
+
+func TestClientStreamReportsProviderHTTPError(t *testing.T) {
+	provider := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "provider rejected request", http.StatusUnauthorized)
+	}))
+	defer provider.Close()
+
+	cfg := config.Config{Endpoint: provider.URL, Protocol: config.ProtocolOpenAI, APIKey: "test-key"}
+	client := &Client{HTTP: provider.Client()}
+	err := client.Stream(cfg, "demo-model", "off", "skill", nil, func(Delta) error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "provider HTTP 401") || !strings.Contains(err.Error(), "provider rejected request") {
+		t.Fatalf("unexpected provider error: %v", err)
 	}
 }

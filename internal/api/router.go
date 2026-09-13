@@ -116,18 +116,19 @@ func (s *Server) configHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if incoming.APIKey != "" {
-			if envKey := os.Getenv("AI_WEB_ENGINE_API_KEY"); envKey != "" {
-				incoming.APIKey = ""
-				incoming.APIKeyEnv = "AI_WEB_ENGINE_API_KEY"
-			}
-		}
 		if incoming.APIKey == "" && incoming.APIKeyEnv == "" {
 			s.cfgMu.RLock()
 			incoming.APIKey = s.cfg.APIKey
 			incoming.APIKeyEnv = s.cfg.APIKeyEnv
 			s.cfgMu.RUnlock()
 		}
+		if incoming.Models == nil {
+			incoming.Models = []config.Model{}
+		}
+		// ShortX's environment-backed key is authoritative and is never
+		// persisted in model_config.json. Resolve it before publishing the
+		// new in-memory configuration so health/chat reflect the saved state.
+		incoming = config.ResolveAPIKey(incoming, os.Getenv)
 		if err := config.Validate(incoming); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -150,7 +151,8 @@ func (s *Server) models(w http.ResponseWriter, _ *http.Request) {
 	s.cfgMu.RLock()
 	cfg := s.cfg
 	s.cfgMu.RUnlock()
-	result := append([]config.Model(nil), cfg.Models...)
+	result := make([]config.Model, 0, len(cfg.Models)+1)
+	result = append(result, cfg.Models...)
 	if cfg.DefaultModelID != "" {
 		found := false
 		for _, item := range result {
