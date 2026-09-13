@@ -5,11 +5,11 @@
 ## 功能
 
 - OpenAI Chat Completions、OpenAI Responses 和 Anthropic Messages SSE 流式响应；
-- 模型列表、模型切换和推理等级切换；
+- 模型列表、模型切换和推理等级切换，支持 `off/low/medium/high/xhigh/max`，默认 `xhigh`；
 - 新建/列出/删除/恢复历史会话；
 - 会话使用 AES-256-GCM，`config/master.key` 与 `sessions/*.enc` 权限为 600；
 - 启动时递归读取 `skills/**/SKILL.md`，并把 `shortx-rule-creator` 约束放在 system 消息首位；
-- 配置页保存 provider、endpoint、protocol、API Key、默认模型和模型列表；协议支持 OpenAI Chat、OpenAI Responses、Anthropic；
+- 模型设置页支持多组 provider 的新增、编辑、切换、删除；每个 provider 使用独立的 `config/providers/<provider-id>.key` 文件（权限 600），协议支持 OpenAI Chat、OpenAI Responses、Anthropic；
 - 移动端会话抽屉支持新建、恢复、删除历史会话；
 - 只读设备能力接口提供 ABI、Root、SELinux、命令、路径和 DNS 能力，作为 ShortX 指令生成上下文；
 - API Key 不出现在 GET 配置响应、日志和会话文件中；
@@ -52,7 +52,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
 ```
 
 
-发布流程会创建 `v1.1.6` Release，并提供以下独立资产：
+发布流程会创建 `v1.1.7` Release，并提供以下独立资产：
 
 - `ai-web-engine-android-arm64`：Android `arm64-v8a`，ELF64/AArch64；
 - `ai-web-engine-android-armv7`：Android `armeabi-v7a`，ELF32/ARM EABI5；
@@ -74,30 +74,32 @@ sh scripts/start.sh
 
 启动后会监听并打开 `http://127.0.0.1:6688`；不要再使用旧的 `6666`。
 
-`scripts/init.sh` 的 ZIP 校验兼容 Android 常见的 `unzip` 实现：优先使用 `unzip -Z1`，不支持时回退到标准 `unzip -l`，并额外运行 `unzip -t`、路径安全检查和解压后完整性检查。初始化会同时准备与当前 ABI 匹配的引擎、skills、`start.sh`、`stop.sh`、配置模板、`master.key` 和目录；所有资源先进入临时文件，全部通过后统一提交，失败则保留旧资源且不写完成标记。`scripts/start.sh` 固定使用浏览器允许的本机端口 `6688`。`6666` 会被 Chromium/Chrome 拒绝并显示 `ERR_UNSAFE_PORT`；启动时如果 PID 文件对应旧的 6666 引擎，会先按可执行文件精确校验并安全迁移。
+`scripts/init.sh` 的 ZIP 校验兼容 Android 常见的 `unzip` 实现：优先使用 `unzip -Z1`，不支持时回退到标准 `unzip -l`，并额外运行 `unzip -t`、路径安全检查和解压后完整性检查。初始化会同时准备与当前 ABI 匹配的引擎、skills、`start.sh`、`stop.sh`、配置模板、`config/providers/`、`master.key` 和目录；所有资源先进入临时文件，全部通过后统一提交，失败则保留旧资源且不写完成标记。`scripts/start.sh` 固定使用浏览器允许的本机端口 `6688`。`6666` 会被 Chromium/Chrome 拒绝并显示 `ERR_UNSAFE_PORT`；启动时如果 PID 文件对应旧的 6666 引擎，会先按可执行文件精确校验并安全迁移。
 
 ## API
 
 - `GET /`：嵌入式 Web UI
 - `GET /health`
 - `GET/POST /api/config`
+- `POST /api/config/reload`：从磁盘重新读取 provider 注册表和对应 Key
+- `POST /api/engine/restart`：真实替换当前引擎进程
+- `GET/POST /api/providers`、`DELETE /api/providers/{id}`
+- `POST /api/providers/select`：切换全局活动 provider；会话仍可单独保存自己的 provider/model/reasoning 选择
 - `GET /api/models`
 - `GET/POST /api/sessions`
-- `GET/DELETE /api/sessions/{id}`
+- `GET/PATCH/DELETE /api/sessions/{id}`
 - `POST /api/chat`：SSE
 - `GET /api/device-capabilities`：只读 Android 设备技术能力
 - `GET /api/skills`
 - `POST /api/skills/reload`
 
-## API Key：ShortX 环境变量优先
+## Provider Key：本地独立文件
 
-ShortX 启动指令会把环境变量 `%模型key%` 注入本地进程：
+多 provider 配置写入 `config/model_config.json` 的非敏感注册表；每个 provider 的真实 Key 写入对应的 `config/providers/<provider-id>.key`，文件权限为 `600`。网页不会回显 Key，留空编辑 Key 会保留原文件；删除 provider 会同步删除对应 Key 文件。
 
-```sh
-export AI_WEB_ENGINE_API_KEY="%模型key%"
-```
+会话持久化 `providerId`、`modelId` 和 `reasoningLevel`。请求会严格按会话 provider 读取对应 Key，不按名称猜测，也不会把其他 provider 的 Key 作为 fallback。
 
-Go 引擎优先读取 `AI_WEB_ENGINE_API_KEY`；`model_config.json` 只保存 `apiKeyEnv`，不会保存实际 Key。Web 设置页在该环境变量存在时也不会把输入 Key 写回配置文件。
+旧单 provider 配置仍兼容 `model.key` 和 `AI_WEB_ENGINE_API_KEY`；ShortX 启动动作保留环境变量注入，主要用于旧配置迁移和兼容场景，不会覆盖多 provider 的本地 Key 文件。
 
 
 ShortX 三条动作使用仓库索引生成器支持的 `type.googleapis.com/ShellCommand` 类型，并均以 `.new` 临时文件校验后替换云端脚本。
@@ -113,7 +115,7 @@ ShortX 三条动作使用仓库索引生成器支持的 `type.googleapis.com/She
 `scripts/stop.sh` 只读取 `/data/local/ai-instruction/bin/ai-web-engine.pid`，并核验 `/proc/<pid>/exe` 或命令行确实指向本引擎二进制后才发送信号。它不使用宽泛的 `pkill -f`，不会停止其他 Android/root 进程，也不会删除配置、master.key、会话、skills、日志或 PID 记录。
 
 
-默认配置模板不包含真实 API Key。首次配置通过 Web UI 写入 `/data/local/ai-instruction/config/model_config.json`，该文件使用 600 权限；Android Keystore 不属于 Go 纯静态二进制本身的可调用标准库能力，因此本项目不伪称已经接入 Keystore。需要 Keystore 时，应由 Android 外部安全桥接程序提供，并把 Key 以环境变量注入服务。
+默认配置模板不包含真实 API Key。首次配置通过 Web UI 写入 `/data/local/ai-instruction/config/model_config.json`，provider Key 写入 `/data/local/ai-instruction/config/providers/<provider-id>.key`，配置和 Key 文件均使用 600 权限；Android Keystore 不属于 Go 纯静态二进制本身的可调用标准库能力，因此本项目不伪称已经接入 Keystore。需要 Keystore 时，应由 Android 外部安全桥接程序提供，并把 Key 以环境变量注入服务。
 
 ## Android 网络与协议
 

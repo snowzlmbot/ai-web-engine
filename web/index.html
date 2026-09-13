@@ -15,7 +15,7 @@
     </div>
     <div class="header-actions">
       <span id="health" class="pill pending">连接中</span>
-      <small id="buildVersion" class="build-version">v1.1.6</small>
+      <small id="buildVersion" class="build-version">v1.1.7</small>
       <button id="sessionsButton" class="header-action" type="button">会话</button>
     </div>
   </header>
@@ -35,6 +35,9 @@
 
     <main>
       <section class="toolbar" aria-label="模型工具栏">
+        <label>服务商
+          <select id="providerSelect" aria-label="服务商"></select>
+        </label>
         <label>模型
           <select id="model" aria-label="模型"></select>
           <small id="modelEmpty" class="field-hint">尚未配置模型</small>
@@ -43,8 +46,10 @@
           <select id="reasoning" aria-label="推理等级">
             <option value="off">关闭</option>
             <option value="low">低</option>
-            <option value="medium" selected>中</option>
+            <option value="medium">中</option>
             <option value="high">高</option>
+            <option value="xhigh" selected>极高</option>
+            <option value="max">最大</option>
           </select>
         </label>
         <button id="settings" type="button">模型设置</button>
@@ -60,57 +65,38 @@
     </main>
   </div>
 
-  <dialog id="configDialog">
-    <form id="configForm">
-      <h2>模型服务设置</h2>
-      <p class="dialog-intro">配置完成后，页面会连接你选择的模型服务。API Key 不会回显。</p>
-      <label>服务商
-        <input id="provider" required placeholder="deepseek / openai / anthropic / custom">
-      </label>
-      <label>端点
-        <input id="endpoint" type="url" required placeholder="https://api.example.com">
-      </label>
-      <label>协议
-        <select id="protocol">
-          <option value="openai">OpenAI Chat 兼容</option>
-          <option value="openai-responses">OpenAI Responses</option>
-          <option value="anthropic">Anthropic</option>
-        </select>
-      </label>
-      <label>API Key（可选）
-        <input id="apiKey" type="password" autocomplete="off" placeholder="优先使用 ShortX 环境变量">
-      </label>
-      <small id="keyHint" class="field-hint"></small>
-      <label>默认模型 ID
-        <input id="defaultModel" required placeholder="例如 deepseek-chat">
-      </label>
-      <label>模型列表（每行一个 ID）
-        <textarea id="models" rows="3" placeholder="deepseek-chat"></textarea>
-      </label>
-      <label>默认推理等级
-        <select id="configReasoning">
-          <option value="off">off</option>
-          <option value="low">low</option>
-          <option value="medium" selected>medium</option>
-          <option value="high">high</option>
-        </select>
-      </label>
-      <div class="dialog-actions">
-        <button id="cancelConfig" type="button">取消</button>
-        <button class="primary" id="saveConfig" type="submit">保存并连接</button>
+  <section id="settingsPanel" class="overlay-panel" hidden aria-labelledby="settingsTitle">
+    <div class="panel-shell">
+      <div class="panel-heading">
+        <div>
+          <span class="eyebrow">MODEL PROVIDERS</span>
+          <h2 id="settingsTitle">模型服务设置</h2>
+        </div>
+        <button id="closeSettings" class="sidebar-close" type="button" aria-label="关闭模型设置">×</button>
       </div>
-    </form>
-  </dialog>
+      <div class="provider-layout">
+        <div>
+          <div class="section-heading"><h3>服务商</h3><button id="newProvider" type="button">＋ 新增</button></div>
+          <div id="providerList" class="provider-list"></div>
+        </div>
+        <form id="providerForm" class="provider-form">
+          <input id="providerId" type="hidden">
+          <label>服务商名称<input id="providerName" required placeholder="例如 cc-vibe"></label>
+          <label>端点<input id="providerEndpoint" type="url" required placeholder="https://api.example.com/v1/responses"></label>
+          <label>协议<select id="providerProtocol"><option value="openai">OpenAI Chat 兼容</option><option value="openai-responses">OpenAI Responses</option><option value="anthropic">Anthropic</option></select></label>
+          <label>默认模型 ID<input id="providerDefaultModel" required placeholder="gpt-5.6-sol"></label>
+          <label>模型列表（每行一个 ID）<textarea id="providerModels" rows="4" placeholder="gpt-5.6-sol"></textarea></label>
+          <label>本地 Key 文件<input id="providerKey" type="password" autocomplete="new-password" placeholder="保存到独立 provider key 文件"></label>
+          <small id="providerKeyHint" class="field-hint">Key 只写入本地 config/providers/&lt;provider-id&gt;.key，权限 600。</small>
+          <div class="panel-actions"><button id="refreshConfig" type="button">刷新配置</button><button id="restartEngine" type="button">重启引擎</button><button id="deleteProvider" type="button" class="danger">删除服务商</button><button class="primary" type="submit">保存服务商</button></div>
+        </form>
+      </div>
+    </div>
+  </section>
 
   <dialog id="deviceDialog">
     <section class="device-panel">
-      <div class="dialog-heading">
-        <div>
-          <h2>设备能力</h2>
-          <p class="dialog-intro">只读技术能力快照，用于生成匹配本机环境的指令。</p>
-        </div>
-        <button id="closeDevice" class="sidebar-close" type="button" aria-label="关闭设备能力">×</button>
-      </div>
+      <div class="dialog-heading"><div><h2>设备能力</h2><p class="dialog-intro">只读技术能力快照，用于生成匹配本机环境的指令。</p></div><button id="closeDevice" class="sidebar-close" type="button" aria-label="关闭设备能力">×</button></div>
       <pre id="deviceOutput" class="device-output">读取中…</pre>
       <p class="field-hint">不包含 IMEI、序列号、MAC、定位、联系人、应用数据、Cookie、API Key 或会话正文。</p>
     </section>

@@ -50,11 +50,14 @@ script_valid() {
 config_valid() {
   candidate=$1
   [ -s "$candidate" ] || return 1
+  grep -q '"reasoningLevel"' "$candidate" || return 1
+  if grep -q '"providers"' "$candidate" && grep -q '"activeProviderId"' "$candidate"; then
+    return 0
+  fi
   grep -q '"provider"' "$candidate" || return 1
   grep -q '"endpoint"' "$candidate" || return 1
   grep -q '"protocol"' "$candidate" || return 1
   grep -q '"models"' "$candidate" || return 1
-  grep -q '"reasoningLevel"' "$candidate" || return 1
   return 0
 }
 
@@ -112,12 +115,12 @@ esac
 
 log "[INFO] Android ABI=$ABI machine=$MACHINE asset=$ASSET_SUFFIX"
 
-mkdir -p "$BASE/bin" "$BASE/scripts" "$BASE/config" "$BASE/skills" "$BASE/sessions" "$BASE/logs" || fail "创建 Android 引擎目录失败"
-chmod 700 "$BASE" "$BASE/bin" "$BASE/scripts" "$BASE/config" "$BASE/skills" "$BASE/sessions" "$BASE/logs" 2>/dev/null || true
+mkdir -p "$BASE/bin" "$BASE/scripts" "$BASE/config" "$BASE/config/providers" "$BASE/skills" "$BASE/sessions" "$BASE/logs" || fail "创建 Android 引擎目录失败"
+chmod 700 "$BASE" "$BASE/bin" "$BASE/scripts" "$BASE/config" "$BASE/config/providers" "$BASE/skills" "$BASE/sessions" "$BASE/logs" 2>/dev/null || true
 
 CONFIG="$BASE/config/model_config.json"
 if [ ! -f "$CONFIG" ]; then
-  printf '%s\n' '{"provider":"","endpoint":"","protocol":"openai","apiKey":"","defaultModelId":"","models":[],"reasoningLevel":"medium"}' > "$CONFIG" || fail "创建模型配置模板失败"
+  printf '%s\n' '{"provider":"","endpoint":"","protocol":"openai","apiKey":"","defaultModelId":"","models":[],"reasoningLevel":"xhigh"}' > "$CONFIG" || fail "创建模型配置模板失败"
   chmod 600 "$CONFIG" || fail "设置模型配置权限失败"
   log "[INIT] 已创建 model_config.json"
 else

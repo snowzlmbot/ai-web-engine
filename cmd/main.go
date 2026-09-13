@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"github.com/snowzlmbot/ai-web-engine/internal/api"
 	"github.com/snowzlmbot/ai-web-engine/internal/buildinfo"
@@ -43,11 +44,10 @@ func main() {
 	logger := log.New(logFile, "", log.LstdFlags|log.LUTC)
 	logger.Printf("starting ai-web-engine version=%s host=%s port=%d", version, *host, *port)
 
-	cfg, err := config.Load(*configPath)
+	cfg, err := config.LoadRuntime(*configPath, os.Getenv)
 	if err != nil {
 		logger.Fatal(err)
 	}
-	cfg = config.ResolveAPIKey(cfg, os.Getenv)
 	keyPath := filepath.Join(filepath.Dir(*configPath), "master.key")
 	store, err := session.NewStore(*sessionsDir, keyPath)
 	if err != nil {
@@ -57,6 +57,12 @@ func main() {
 	if err != nil {
 		logger.Fatal(err)
 	}
+	server.SetRestartFunc(func() {
+		logger.Printf("restart requested through local Web UI")
+		if err := syscall.Exec(os.Args[0], os.Args, os.Environ()); err != nil {
+			logger.Printf("restart exec failed: %v", err)
+		}
+	})
 	addr := fmt.Sprintf("%s:%d", *host, *port)
 	logger.Printf("ready addr=http://%s skills=%s", addr, *skillsDir)
 	if err := http.ListenAndServe(addr, server.Handler()); err != nil {

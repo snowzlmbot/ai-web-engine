@@ -21,11 +21,14 @@ type Message struct {
 }
 
 type Session struct {
-	ID        string    `json:"id"`
-	Title     string    `json:"title"`
-	CreatedAt int64     `json:"createdAt"`
-	UpdatedAt int64     `json:"updatedAt"`
-	Messages  []Message `json:"messages"`
+	ID             string    `json:"id"`
+	Title          string    `json:"title"`
+	CreatedAt      int64     `json:"createdAt"`
+	UpdatedAt      int64     `json:"updatedAt"`
+	ProviderID     string    `json:"providerId,omitempty"`
+	ModelID        string    `json:"modelId,omitempty"`
+	ReasoningLevel string    `json:"reasoningLevel,omitempty"`
+	Messages       []Message `json:"messages"`
 }
 
 type Store struct {

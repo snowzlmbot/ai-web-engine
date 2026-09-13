@@ -166,6 +166,38 @@ button:not(.primary):hover:not(:disabled) { background: #203250; border-color: #
 #composer.disabled { opacity: .8; }
 
 .dialog-intro { margin: -4px 0 4px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.overlay-panel {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  overflow: auto;
+  padding: 24px;
+  background: rgba(3, 7, 18, .88);
+}
+.panel-shell {
+  width: min(920px, 100%);
+  margin: 0 auto;
+  padding: 24px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 24px 80px #000b;
+}
+.panel-heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+.panel-heading h2 { margin: 6px 0 0; color: #edf3ff; font-size: 20px; }
+.provider-layout { display: grid; grid-template-columns: minmax(180px, .7fr) minmax(0, 1.3fr); gap: 24px; }
+.section-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.section-heading h3 { margin: 0; font-size: 13px; color: #cbd5e1; }
+.provider-list { display: grid; gap: 7px; }
+.provider-item { display: grid; gap: 3px; width: 100%; padding: 11px 12px !important; text-align: left; }
+.provider-item.active { border-color: var(--accent); background: #173842; }
+.provider-item strong { color: #edf3ff; font-size: 13px; }
+.provider-item small { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.provider-form { display: grid; gap: 12px; }
+.provider-form input, .provider-form select, .provider-form textarea { width: 100%; }
+.panel-actions { display: flex; flex-wrap: wrap; justify-content: end; gap: 8px; margin-top: 4px; }
+.danger { color: #fecdd3 !important; border-color: #7f1d1d !important; }
+.danger:hover:not(:disabled) { background: #451a25 !important; }
 dialog { background: var(--panel); color: #edf3ff; border: 1px solid var(--line); border-radius: 14px; max-width: 470px; width: calc(100% - 32px); padding: 0; }
 dialog::backdrop { background: #030712cc; }
 #configForm { display: grid; gap: 12px; padding: 24px; }
@@ -192,4 +224,9 @@ dialog::backdrop { background: #030712cc; }
   #composer { padding: 12px; flex-direction: column; }
   #composer .primary { align-self: stretch; }
   .message { max-width: 96%; }
+  .overlay-panel { padding: 10px; }
+  .panel-shell { padding: 17px 14px; }
+  .provider-layout { grid-template-columns: 1fr; gap: 18px; }
+  .panel-actions { justify-content: stretch; }
+  .panel-actions button { flex: 1 1 42%; }
 }
