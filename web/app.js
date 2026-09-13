@@ -153,6 +153,37 @@ function renderSessions(items) {
   });
 }
 
+function setSidebar(open) {
+  const sidebar = $("sessionSidebar");
+  if (sidebar) sidebar.classList.toggle("mobile-open", open);
+}
+
+async function ensureSession() {
+  if (state.sessionId) return;
+  const items = await api("/api/sessions").then((response) => response.json());
+  if (items.length > 0) {
+    await openSession(items[0].id);
+    return;
+  }
+  const session = await api("/api/sessions", { method: "POST" }).then((response) => response.json());
+  state.sessionId = session.id;
+  renderSessions([session]);
+  clearChat("输入需求开始生成 ShortX 指令。");
+}
+
+async function openDeviceCapabilities() {
+  const output = $("deviceOutput");
+  if (output) output.textContent = "读取中…";
+  showDialog($("deviceDialog"));
+  try {
+    const capabilities = await api("/api/device-capabilities").then((response) => response.json());
+    if (output) output.textContent = JSON.stringify(capabilities, null, 2);
+  } catch (error) {
+    if (output) output.textContent = `读取失败：${error.message}`;
+    showNotice(`读取设备能力失败：${error.message}`, "error");
+  }
+}
+
 async function refresh({ openSettings = false } = {}) {
   if (state.loading) return;
   state.loading = true;
@@ -194,6 +225,7 @@ async function openSession(id) {
   try {
     const session = await api(`/api/sessions/${encodeURIComponent(id)}`).then((response) => response.json());
     state.sessionId = session.id;
+    setSidebar(false);
     clearChat(session.messages?.length ? "" : "输入需求开始生成 ShortX 指令。" );
     (session.messages || []).forEach((message) => addMessage(message.role, message.content));
     await refresh();
@@ -406,8 +438,14 @@ function on(id, event, handler) {
   if (element) element.addEventListener(event, handler);
 }
 
-on("newSession", "click", createSession);
-on("settings", "click", openSettingsDialog);
+on("newSession", "click", async () => {
+  await createSession();
+  setSidebar(false);
+});
+on("sessionsButton", "click", () => setSidebar(true));
+on("closeSessions", "click", () => setSidebar(false));
+on("deviceCapabilities", "click", openDeviceCapabilities);
+on("closeDevice", "click", () => closeDialog($("deviceDialog")));
 on("configForm", "submit", saveConfig);
 on("composer", "submit", sendMessage);
 on("cancelConfig", "click", () => closeDialog($("configDialog")));
@@ -417,4 +455,6 @@ on("reasoning", "change", () => {
 });
 
 clearChat("输入需求开始生成 ShortX 指令。");
-refresh({ openSettings: true });
+refresh({ openSettings: true })
+  .then(() => ensureSession())
+  .catch((error) => showNotice(`初始化会话失败：${error.message}`, "error"));

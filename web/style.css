@@ -32,6 +32,12 @@ header {
   border-bottom: 1px solid var(--line);
 }
 
+.header-actions { display: flex; align-items: center; gap: 8px; }
+.header-action { display: none; }
+.sidebar-heading, .dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sidebar-heading h2 { margin: 0 4px 12px; }
+.sidebar-close { width: 32px; height: 32px; padding: 0; line-height: 1; font-size: 20px; }
+
 h1 { font-size: 24px; margin: 4px 0; }
 h2 { font-size: 13px; color: #9fb1cc; margin: 28px 4px 12px; }
 .eyebrow { letter-spacing: .2em; font-size: 10px; color: var(--accent); }
@@ -166,12 +172,18 @@ dialog::backdrop { background: #030712cc; }
 #configForm h2 { margin: 0; color: #edf3ff; font-size: 18px; }
 #configForm input, #configForm select, #configForm textarea { width: 100%; }
 .dialog-actions { display: flex; justify-content: end; gap: 10px; margin-top: 6px; }
+.device-panel { padding: 22px; max-width: 620px; }
+.device-panel h2 { margin: 0; color: #edf3ff; font-size: 18px; }
+.device-output { max-height: min(52vh, 460px); overflow: auto; margin: 14px 0; padding: 12px; border: 1px solid var(--line); background: #0a1424; color: #cfe2ff; font-size: 12px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
 
 @media (max-width: 700px) {
   header { height: auto; padding: 17px 16px; }
   h1 { font-size: 20px; }
   .layout { grid-template-columns: 1fr; min-height: calc(100vh - 73px); }
-  aside { display: none; }
+  .header-actions { gap: 6px; }
+  .header-action { display: inline-flex; }
+  aside { display: block; position: fixed; z-index: 10; inset: 0 auto 0 0; width: min(320px, 88vw); transform: translateX(-105%); transition: transform .2s ease; box-shadow: 18px 0 40px #000a; overflow: auto; }
+  aside.mobile-open { transform: translateX(0); }
   main { min-height: calc(100vh - 73px); }
   .notice { margin: 10px 12px 0; }
   .toolbar { flex-wrap: wrap; padding: 14px 12px; align-items: end; }

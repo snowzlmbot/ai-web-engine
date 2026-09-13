@@ -14,6 +14,7 @@ import (
 
 	"github.com/snowzlmbot/ai-web-engine/internal/buildinfo"
 	"github.com/snowzlmbot/ai-web-engine/internal/config"
+	"github.com/snowzlmbot/ai-web-engine/internal/device"
 	"github.com/snowzlmbot/ai-web-engine/internal/model"
 	"github.com/snowzlmbot/ai-web-engine/internal/session"
 	"github.com/snowzlmbot/ai-web-engine/internal/skills"
@@ -63,6 +64,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/health", s.health)
 	mux.HandleFunc("/api/config", s.configHandler)
 	mux.HandleFunc("/api/models", s.models)
+	mux.HandleFunc("/api/device-capabilities", s.deviceCapabilities)
 	mux.HandleFunc("/api/sessions", s.sessions)
 	mux.HandleFunc("/api/sessions/", s.sessions)
 	mux.HandleFunc("/api/skills", s.skillsHandler)
@@ -146,6 +148,14 @@ func (s *Server) configHandler(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (s *Server) deviceCapabilities(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	s.writeJSON(w, http.StatusOK, device.Collect())
 }
 
 func (s *Server) models(w http.ResponseWriter, _ *http.Request) {
@@ -297,6 +307,9 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 	s.skillMu.RLock()
 	system := s.skillText
 	s.skillMu.RUnlock()
+	if capabilityPrompt := device.Collect().Prompt(); capabilityPrompt != "" {
+		system += "\n\n" + capabilityPrompt
+	}
 
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache, no-transform")

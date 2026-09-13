@@ -10,6 +10,8 @@
 - 会话使用 AES-256-GCM，`config/master.key` 与 `sessions/*.enc` 权限为 600；
 - 启动时递归读取 `skills/**/SKILL.md`，并把 `shortx-rule-creator` 约束放在 system 消息首位；
 - 配置页保存 provider、endpoint、protocol、API Key、默认模型和模型列表；协议支持 OpenAI Chat、OpenAI Responses、Anthropic；
+- 移动端会话抽屉支持新建、恢复、删除历史会话；
+- 只读设备能力接口提供 ABI、Root、SELinux、命令、路径和 DNS 能力，作为 ShortX 指令生成上下文；
 - API Key 不出现在 GET 配置响应、日志和会话文件中；
 - Android `/system/bin/sh` 兼容的云端 `init.sh`、`start.sh`、`stop.sh`，更新采用 `.new` 原子替换并保留用户数据。
 
@@ -50,7 +52,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
 ```
 
 
-发布流程会创建 `v1.1.2` Release，并提供以下独立资产：
+发布流程会创建 `v1.1.4` Release，并提供以下独立资产：
 
 - `ai-web-engine-android-arm64`：Android `arm64-v8a`，ELF64/AArch64；
 - `ai-web-engine-android-armv7`：Android `armeabi-v7a`，ELF32/ARM EABI5；
@@ -83,6 +85,7 @@ sh scripts/start.sh
 - `GET/POST /api/sessions`
 - `GET/DELETE /api/sessions/{id}`
 - `POST /api/chat`：SSE
+- `GET /api/device-capabilities`：只读 Android 设备技术能力
 - `GET /api/skills`
 - `POST /api/skills/reload`
 

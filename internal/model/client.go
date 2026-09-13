@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -63,7 +64,15 @@ func (c *Client) Stream(cfg config.Config, modelID, reasoning, system string, me
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return fmt.Errorf("provider request: %w", err)
+		// Android's native curl uses bionic/netd for name resolution. A
+		// CGO-disabled Go binary cannot always reach that resolver directly,
+		// so retry the same HTTPS request through the system curl without
+		// putting the API key in argv, logs, or persistent configuration.
+		if fallbackErr := streamWithAndroidCurl(endpoint, body, headers, protocol, emit); fallbackErr == nil {
+			return nil
+		} else {
+			return fmt.Errorf("provider request: %w; Android system curl fallback: %v", err, fallbackErr)
+		}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -310,9 +319,12 @@ func androidDialContext(ctx context.Context, network, address string) (net.Conn,
 }
 
 func androidLookupHost(ctx context.Context, host string) ([]string, error) {
+	if ips := systemResolverLookup(ctx, host); len(ips) > 0 {
+		return ips, nil
+	}
 	servers := androidDNSServers()
 	if len(servers) == 0 {
-		return nil, fmt.Errorf("DNS resolution for %s failed: Android system DNS is unavailable", host)
+		return nil, fmt.Errorf("DNS resolution for %s failed: Android system resolver and DNS properties are unavailable", host)
 	}
 	var lastErr error
 	for _, server := range servers {
@@ -332,20 +344,234 @@ func androidLookupHost(ctx context.Context, host string) ([]string, error) {
 	if lastErr == nil {
 		lastErr = errors.New("no DNS response")
 	}
-	return nil, fmt.Errorf("DNS resolution for %s failed using Android system DNS: %w", host, lastErr)
+	return nil, fmt.Errorf("DNS resolution for %s failed using Android system resolver: %w", host, lastErr)
+}
+
+// systemResolverLookup asks Android's own resolver through commands that are
+// available on common system/root shells. This is important on newer Android
+// versions where net.dns1..4 are empty because netd owns private DNS state.
+// The returned IP is dialed directly while net/http still performs TLS SNI
+// and certificate verification against the original hostname.
+func systemResolverLookup(ctx context.Context, host string) []string {
+	commands := [][]string{
+		{"/system/bin/getent", "ahostsv4", host},
+		{"getent", "ahostsv4", host},
+		{"/system/bin/nslookup", host},
+		{"nslookup", host},
+		{"toybox", "nslookup", host},
+		{"/system/bin/toybox", "nslookup", host},
+		{"/system/bin/ping", "-c", "1", "-W", "1", host},
+		{"ping", "-c", "1", "-W", "1", host},
+		{"toybox", "ping", "-c", "1", "-W", "1", host},
+		{"/system/bin/toybox", "ping", "-c", "1", "-W", "1", host},
+	}
+	for _, command := range commands {
+		lookupCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		output, _ := exec.CommandContext(lookupCtx, command[0], command[1:]...).CombinedOutput()
+		cancel()
+		// ping can resolve successfully and still exit non-zero when ICMP is
+		// blocked. Trust parsed addresses, not the command exit status.
+		if ips := parseResolverOutput(string(output)); len(ips) > 0 {
+			return ips
+		}
+	}
+	return nil
+}
+
+func streamWithAndroidCurl(endpoint string, body []byte, headers map[string]string, protocol string, emit func(Delta) error) error {
+	curl, err := androidCurlBinary()
+	if err != nil {
+		return err
+	}
+	bodyFile, err := os.CreateTemp("", ".ai-web-engine-request-*")
+	if err != nil {
+		return fmt.Errorf("create temporary request body: %w", err)
+	}
+	bodyPath := bodyFile.Name()
+	defer os.Remove(bodyPath)
+	if err := bodyFile.Chmod(0o600); err != nil {
+		_ = bodyFile.Close()
+		return fmt.Errorf("protect temporary request body: %w", err)
+	}
+	if _, err := bodyFile.Write(body); err != nil {
+		_ = bodyFile.Close()
+		return fmt.Errorf("write temporary request body: %w", err)
+	}
+	if err := bodyFile.Close(); err != nil {
+		return fmt.Errorf("close temporary request body: %w", err)
+	}
+
+	headerFile, err := os.CreateTemp("", ".ai-web-engine-response-*")
+	if err != nil {
+		return fmt.Errorf("create temporary response headers: %w", err)
+	}
+	headerPath := headerFile.Name()
+	_ = headerFile.Close()
+	defer os.Remove(headerPath)
+	_ = os.Chmod(headerPath, 0o600)
+
+	var config strings.Builder
+	config.WriteString("request = \"POST\"\n")
+	config.WriteString("url = ")
+	config.WriteString(curlConfigValue(endpoint))
+	config.WriteByte('\n')
+	config.WriteString("no-buffer\nshow-error\nsilent\n")
+	config.WriteString("connect-timeout = \"15\"\n")
+	config.WriteString("dump-header = ")
+	config.WriteString(curlConfigValue(headerPath))
+	config.WriteByte('\n')
+	config.WriteString("data-binary = ")
+	config.WriteString(curlConfigValue("@" + bodyPath))
+	config.WriteByte('\n')
+	for key, value := range headers {
+		config.WriteString("header = ")
+		config.WriteString(curlConfigValue(key + ": " + value))
+		config.WriteByte('\n')
+	}
+
+	cmd := exec.Command(curl, "--config", "-")
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("open curl stdin: %w", err)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("open curl stdout: %w", err)
+	}
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start Android curl: %w", err)
+	}
+	if _, err := io.WriteString(stdin, config.String()); err != nil {
+		_ = stdin.Close()
+		_ = cmd.Wait()
+		return fmt.Errorf("send curl request configuration: %w", err)
+	}
+	if err := stdin.Close(); err != nil {
+		_ = cmd.Wait()
+		return fmt.Errorf("close curl configuration: %w", err)
+	}
+
+	var captured limitedBuffer
+	parseErr := parseSSE(protocol, io.TeeReader(stdout, &captured), emit)
+	waitErr := cmd.Wait()
+	status := curlResponseStatus(headerPath)
+	if status >= 400 {
+		return fmt.Errorf("provider HTTP %d: %s", status, strings.TrimSpace(captured.String()))
+	}
+	if waitErr != nil {
+		message := strings.TrimSpace(stderr.String())
+		if message == "" {
+			message = strings.TrimSpace(captured.String())
+		}
+		return fmt.Errorf("curl failed: %s", message)
+	}
+	if parseErr != nil {
+		return parseErr
+	}
+	return nil
+}
+
+func androidCurlBinary() (string, error) {
+	if override := strings.TrimSpace(os.Getenv("AI_WEB_ENGINE_CURL")); override != "" {
+		if info, err := os.Stat(override); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+			return override, nil
+		}
+	}
+	for _, candidate := range []string{"/system/bin/curl", "/system/xbin/curl", "curl"} {
+		if strings.Contains(candidate, "/") {
+			if info, err := os.Stat(candidate); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+				return candidate, nil
+			}
+			continue
+		}
+		if path, err := exec.LookPath(candidate); err == nil {
+			return path, nil
+		}
+	}
+	return "", errors.New("Android system curl is unavailable")
+}
+
+func curlConfigValue(value string) string {
+	value = strings.NewReplacer("\\", "\\\\", "\"", "\\\"", "\r", "\\r", "\n", "\\n").Replace(value)
+	return "\"" + value + "\""
+}
+
+type limitedBuffer struct {
+	data []byte
+}
+
+func (b *limitedBuffer) Write(value []byte) (int, error) {
+	originalLen := len(value)
+	if len(b.data) < 32<<10 {
+		remaining := (32 << 10) - len(b.data)
+		if len(value) > remaining {
+			value = value[:remaining]
+		}
+		b.data = append(b.data, value...)
+	}
+	return originalLen, nil
+}
+
+func (b *limitedBuffer) String() string { return string(b.data) }
+
+func curlResponseStatus(path string) int {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	status := 0
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && strings.HasPrefix(fields[0], "HTTP/") {
+			if value, err := strconv.Atoi(fields[1]); err == nil {
+				status = value
+			}
+		}
+	}
+	return status
+}
+
+func parseResolverOutput(output string) []string {
+	ips := make([]string, 0, 4)
+	for _, line := range strings.Split(output, "\n") {
+		for _, field := range strings.Fields(line) {
+			value := strings.Trim(field, "()[],:;")
+			ip := net.ParseIP(value)
+			if ip == nil || ip.IsLoopback() || ip.IsUnspecified() {
+				continue
+			}
+			canonical := ip.String()
+			found := false
+			for _, existing := range ips {
+				if existing == canonical {
+					found = true
+					break
+				}
+			}
+			if !found {
+				ips = append(ips, canonical)
+			}
+		}
+	}
+	return ips
 }
 
 func androidDNSServers() []string {
 	servers := make([]string, 0, 6)
+	if override := os.Getenv("AI_WEB_ENGINE_DNS"); override != "" {
+		for _, value := range strings.Split(override, ",") {
+			servers = appendUniqueDNS(servers, value)
+		}
+	}
 	for _, property := range []string{"net.dns1", "net.dns2", "net.dns3", "net.dns4"} {
 		if value := getprop(property); value != "" {
 			servers = appendUniqueDNS(servers, value)
 		}
 	}
-	if override := os.Getenv("AI_WEB_ENGINE_DNS"); override != "" {
-		for _, value := range strings.Split(override, ",") {
-			servers = appendUniqueDNS(servers, value)
-		}
+	for _, value := range androidNetdDNSServers() {
+		servers = appendUniqueDNS(servers, value)
 	}
 	if data, err := os.ReadFile("/etc/resolv.conf"); err == nil {
 		for _, line := range strings.Split(string(data), "\n") {
@@ -356,6 +582,44 @@ func androidDNSServers() []string {
 		}
 	}
 	return servers
+}
+
+// androidNetdDNSServers reads resolver state owned by Android's netd. On
+// recent releases net.dns1..4 may be empty while netd still has the active
+// network DNS servers. The output format differs across Android versions, so
+// only syntactically valid non-loopback IPs are retained.
+func androidNetdDNSServers() []string {
+	servers := make([]string, 0, 4)
+	commands := [][]string{
+		{"/system/bin/cmd", "netd", "resolver", "getnetdns"},
+		{"cmd", "netd", "resolver", "getnetdns"},
+		{"/system/bin/cmd", "netd", "resolver", "getnetdns", "0"},
+		{"cmd", "netd", "resolver", "getnetdns", "0"},
+	}
+	for _, command := range commands {
+		if !commandAvailable(command[0]) {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		output, _ := exec.CommandContext(ctx, command[0], command[1:]...).CombinedOutput()
+		cancel()
+		for _, value := range parseResolverOutput(string(output)) {
+			servers = appendUniqueDNS(servers, value)
+		}
+		if len(servers) > 0 {
+			return servers
+		}
+	}
+	return servers
+}
+
+func commandAvailable(command string) bool {
+	if strings.Contains(command, "/") {
+		info, err := os.Stat(command)
+		return err == nil && !info.IsDir() && info.Mode()&0o111 != 0
+	}
+	_, err := exec.LookPath(command)
+	return err == nil
 }
 
 func getprop(property string) string {

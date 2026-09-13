@@ -74,6 +74,45 @@ func TestHealthAndUIExposeBuildVersionAndNoStore(t *testing.T) {
 	}
 }
 
+func TestDeviceCapabilitiesEndpointIsReadOnlyAndDocumentsPrivacyBoundary(t *testing.T) {
+	handler := newTestHandler(t, config.Default())
+
+	req := httptest.NewRequest(http.MethodGet, "/api/device-capabilities", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("device capabilities status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["readOnly"] != true {
+		t.Fatalf("readOnly = %#v, want true", payload["readOnly"])
+	}
+	if _, ok := payload["commands"].(map[string]any); !ok {
+		t.Fatalf("commands = %#v, want object", payload["commands"])
+	}
+	if _, ok := payload["resolver"].(map[string]any); !ok {
+		t.Fatalf("resolver = %#v, want object", payload["resolver"])
+	}
+	if _, ok := payload["excludedData"].([]any); !ok {
+		t.Fatalf("excludedData = %#v, want array", payload["excludedData"])
+	}
+	for _, forbiddenKey := range []string{"imei", "serial", "mac", "location", "contacts", "apiKey", "sessionContents"} {
+		if _, exists := payload[forbiddenKey]; exists {
+			t.Fatalf("device response exposed forbidden key %q", forbiddenKey)
+		}
+	}
+
+	postReq := httptest.NewRequest(http.MethodPost, "/api/device-capabilities", nil)
+	postRec := httptest.NewRecorder()
+	handler.ServeHTTP(postRec, postReq)
+	if postRec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("device capabilities POST status = %d, want %d", postRec.Code, http.StatusMethodNotAllowed)
+	}
+}
+
 func TestModelsReturnsJSONEmptyArrayWhenUnconfigured(t *testing.T) {
 	handler := newTestHandler(t, config.Default())
 	req := httptest.NewRequest(http.MethodGet, "/api/models", nil)
@@ -159,6 +198,21 @@ func TestChatSSEAndEncryptedSessionPersistence(t *testing.T) {
 	provider := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/chat/completions" || r.Header.Get("Authorization") != "Bearer test-key" {
 			http.Error(w, "unexpected provider request", http.StatusBadRequest)
+			return
+		}
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		messages, ok := payload["messages"].([]any)
+		if !ok || len(messages) == 0 {
+			http.Error(w, "missing messages", http.StatusBadRequest)
+			return
+		}
+		first, ok := messages[0].(map[string]any)
+		if !ok || first["role"] != "system" || !strings.Contains(first["content"].(string), "本机 Android 设备能力") {
+			http.Error(w, "missing device capability context", http.StatusBadRequest)
 			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")

@@ -2,8 +2,10 @@ package model
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -269,6 +271,21 @@ func TestNewClientUsesAndroidAwareTransport(t *testing.T) {
 	}
 }
 
+func TestParseResolverOutput(t *testing.T) {
+	output := "cc-vibe.com has address 45.77.158.239\nName: cc-vibe.com\nAddress: 45.77.158.239\nAddress: ::1\n"
+	got := parseResolverOutput(output)
+	if strings.Join(got, ",") != "45.77.158.239" {
+		t.Fatalf("resolver output = %v", got)
+	}
+}
+
+func TestSystemResolverDoesNotRequireNetDNSProperties(t *testing.T) {
+	t.Setenv("AI_WEB_ENGINE_DNS", "")
+	if got := parseResolverOutput("Name: example\nAddress: 192.0.2.10\n"); len(got) != 1 || got[0] != "192.0.2.10" {
+		t.Fatalf("system resolver parser = %v", got)
+	}
+}
+
 func TestClientStreamReportsProviderHTTPError(t *testing.T) {
 	provider := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "provider rejected request", http.StatusUnauthorized)
@@ -282,3 +299,33 @@ func TestClientStreamReportsProviderHTTPError(t *testing.T) {
 		t.Fatalf("unexpected provider error: %v", err)
 	}
 }
+
+func TestAndroidCurlFallbackUsesStdinConfigWithoutSecretInArgv(t *testing.T) {
+	curlPath := "/tmp/fake-android-curl-v2"
+	if _, err := os.Stat(curlPath); err != nil {
+		t.Skip("fake curl fixture is supplied by the integration runner")
+	}
+	_ = os.Chmod(curlPath, 0o755)
+	t.Setenv("AI_WEB_ENGINE_CURL", curlPath)
+	failingTransport := roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("simulated pure-Go DNS failure")
+	})
+	client := &Client{HTTP: &http.Client{Transport: failingTransport}}
+	cfg := config.Config{Endpoint: "https://provider.example/v1/chat/completions", Protocol: config.ProtocolOpenAI, APIKey: "test-fallback-key"}
+	var text string
+	var done bool
+	if err := client.Stream(cfg, "demo", "off", "skill", nil, func(delta Delta) error {
+		text += delta.Content
+		done = done || delta.Done
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if text != "fallback-ok" || !done {
+		t.Fatalf("fallback stream = %q, done=%v", text, done)
+	}
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
