@@ -277,6 +277,7 @@ function setConfigForm(config) {
 }
 
 function showDialog(dialog) {
+  if (!dialog || dialog.open) return;
   if (typeof dialog.showModal === "function") dialog.showModal();
   else dialog.setAttribute("open", "");
 }
@@ -287,10 +288,11 @@ function closeDialog(dialog) {
 }
 
 async function openSettingsDialog() {
+  const dialog = $("configDialog");
+  showDialog(dialog);
   try {
     const config = await api("/api/config").then((response) => response.json());
     setConfigForm(config);
-    showDialog($("configDialog"));
   } catch (error) {
     showNotice(`读取模型设置失败：${error.message}`, "error");
   }

@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -32,6 +34,8 @@ func NewClient() *Client {
 	} else {
 		transport = transport.Clone()
 	}
+	pool := androidCertPool()
+	transport.TLSClientConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
 	transport.DialContext = androidDialContext
 	return &Client{HTTP: &http.Client{Transport: transport, Timeout: 0}}
 }
@@ -287,6 +291,26 @@ func extract(protocol string, object map[string]any) string {
 }
 
 func UserAgent() string { return "ai-web-engine/1.0" }
+
+func androidCertPool() *x509.CertPool {
+	pool, err := x509.SystemCertPool()
+	if err != nil || pool == nil {
+		pool = x509.NewCertPool()
+	}
+	paths := []string{
+		"/system/etc/security/cacerts",
+		"/apex/com.android.conscrypt/cacerts",
+		"/system/etc/security/cacerts/ca-certificates.crt",
+		"/etc/ssl/certs/ca-certificates.crt",
+		"/etc/ssl/cert.pem",
+	}
+	for _, path := range paths {
+		if data, readErr := os.ReadFile(path); readErr == nil {
+			pool.AppendCertsFromPEM(data)
+		}
+	}
+	return pool
+}
 
 // androidDialContext keeps TLS verification on the original hostname while
 // resolving through Android's system DNS properties. Pure-Go networking may
