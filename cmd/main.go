@@ -9,11 +9,12 @@ import (
 	"path/filepath"
 
 	"github.com/snowzlmbot/ai-web-engine/internal/api"
+	"github.com/snowzlmbot/ai-web-engine/internal/buildinfo"
 	"github.com/snowzlmbot/ai-web-engine/internal/config"
 	"github.com/snowzlmbot/ai-web-engine/internal/session"
 )
 
-var version = "1.0.6"
+var version = buildinfo.Version
 
 func main() {
 	host := flag.String("host", "127.0.0.1", "bind host (loopback by default)")

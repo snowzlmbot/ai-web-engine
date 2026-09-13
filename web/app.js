@@ -16,6 +16,16 @@ function showNotice(message, kind = "info") {
   notice.hidden = !message;
 }
 
+window.addEventListener("error", (event) => {
+  setHealth("页面脚本错误", "bad");
+  showNotice(`页面脚本加载失败：${event.message || "未知错误"}`, "error");
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  const reason = event.reason instanceof Error ? event.reason.message : String(event.reason || "未知错误");
+  showNotice(`页面操作失败：${reason}`, "error");
+});
+
 function setHealth(text, kind = "pending") {
   const health = $("health");
   health.textContent = text;
@@ -87,9 +97,12 @@ function clearChat(message = "") {
 
 function setConfigured(configured) {
   state.configured = Boolean(configured);
-  $("composer").classList.toggle("disabled", !state.configured);
-  $("message").disabled = !state.configured;
-  $("sendButton").disabled = !state.configured || state.sending;
+  const composer = $("composer");
+  const message = $("message");
+  const sendButton = $("sendButton");
+  if (composer) composer.classList.toggle("disabled", !state.configured);
+  if (message) message.disabled = !state.configured;
+  if (sendButton) sendButton.disabled = !state.configured || state.sending;
 }
 
 function renderModels(payload) {
@@ -106,7 +119,8 @@ function renderModels(payload) {
   });
   if (payload.defaultModelId) select.value = payload.defaultModelId;
   select.disabled = models.length === 0;
-  $("modelEmpty").hidden = models.length !== 0;
+  const modelEmpty = $("modelEmpty");
+  if (modelEmpty) modelEmpty.hidden = models.length !== 0;
 }
 
 function renderSessions(items) {
@@ -146,6 +160,8 @@ async function refresh({ openSettings = false } = {}) {
   try {
     const health = await api("/health").then((response) => response.json());
     if (health.status !== "ok") throw new Error("引擎健康检查未通过");
+    const buildVersion = $("buildVersion");
+    if (buildVersion && health.version) buildVersion.textContent = `v${health.version}`;
     setConfigured(health.configured);
     setHealth(health.configured ? "已连接" : "需要配置", health.configured ? "ok" : "warn");
 
@@ -158,7 +174,8 @@ async function refresh({ openSettings = false } = {}) {
 
     if (!health.configured) {
       showNotice("服务已启动，但还没有模型配置。请点击“模型设置”，填写服务商、端点和模型。", "warn");
-      if (openSettings || !$("configDialog").open) await openSettingsDialog();
+      const configDialog = $("configDialog");
+      if (openSettings || !configDialog || !configDialog.open) await openSettingsDialog();
     } else if (!models.models || models.models.length === 0) {
       showNotice("服务已连接，但没有可用模型。请在“模型设置”中填写默认模型 ID。", "warn");
     } else {
@@ -217,11 +234,14 @@ function setConfigForm(config) {
   $("models").value = (config.models || []).map((model) => model.id).join("\n");
   $("configReasoning").value = config.reasoningLevel || "medium";
   $("apiKey").value = "";
-  $("keyHint").textContent = config.apiKeyEnv
-    ? `当前使用环境变量 ${config.apiKeyEnv}（页面不会回显密钥）`
-    : config.apiKey === "configured"
-      ? "当前已有密钥，留空将保留现有密钥"
-      : "推荐使用 ShortX 环境变量 AI_WEB_ENGINE_API_KEY，页面不会保存密钥";
+  const keyHint = $("keyHint");
+  if (keyHint) {
+    keyHint.textContent = config.apiKeyEnv
+      ? `当前使用环境变量 ${config.apiKeyEnv}（页面不会回显密钥）`
+      : config.apiKey === "configured"
+        ? "当前已有密钥，留空将保留现有密钥"
+        : "推荐使用 ShortX 环境变量 AI_WEB_ENGINE_API_KEY，页面不会保存密钥";
+  }
 }
 
 function showDialog(dialog) {
@@ -381,13 +401,19 @@ async function sendMessage(event) {
   }
 }
 
-$("newSession").addEventListener("click", createSession);
-$("settings").addEventListener("click", openSettingsDialog);
-$("configForm").addEventListener("submit", saveConfig);
-$("composer").addEventListener("submit", sendMessage);
-$("cancelConfig").addEventListener("click", () => closeDialog($("configDialog")));
-$("reasoning").addEventListener("change", () => {
-  if ($("reasoning").value) showNotice(`本次请求将使用“${$("reasoning").selectedOptions[0].textContent}”推理等级。`, "info");
+function on(id, event, handler) {
+  const element = $(id);
+  if (element) element.addEventListener(event, handler);
+}
+
+on("newSession", "click", createSession);
+on("settings", "click", openSettingsDialog);
+on("configForm", "submit", saveConfig);
+on("composer", "submit", sendMessage);
+on("cancelConfig", "click", () => closeDialog($("configDialog")));
+on("reasoning", "change", () => {
+  const reasoning = $("reasoning");
+  if (reasoning && reasoning.value) showNotice(`本次请求将使用“${reasoning.selectedOptions[0].textContent}”推理等级。`, "info");
 });
 
 clearChat("输入需求开始生成 ShortX 指令。");

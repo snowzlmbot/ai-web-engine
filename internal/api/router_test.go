@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/snowzlmbot/ai-web-engine/internal/buildinfo"
 	"github.com/snowzlmbot/ai-web-engine/internal/config"
 	"github.com/snowzlmbot/ai-web-engine/internal/model"
 	"github.com/snowzlmbot/ai-web-engine/internal/session"
@@ -44,6 +45,33 @@ func newTestServer(t *testing.T, cfg config.Config) *Server {
 
 func newTestHandler(t *testing.T, cfg config.Config) http.Handler {
 	return newTestServer(t, cfg).Handler()
+}
+
+func TestHealthAndUIExposeBuildVersionAndNoStore(t *testing.T) {
+	handler := newTestHandler(t, config.Default())
+
+	healthReq := httptest.NewRequest(http.MethodGet, "/health", nil)
+	healthRec := httptest.NewRecorder()
+	handler.ServeHTTP(healthRec, healthReq)
+	var health struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(healthRec.Body.Bytes(), &health); err != nil {
+		t.Fatal(err)
+	}
+	if health.Version != buildinfo.Version {
+		t.Fatalf("health version = %q, want %q", health.Version, buildinfo.Version)
+	}
+
+	uiReq := httptest.NewRequest(http.MethodGet, "/", nil)
+	uiRec := httptest.NewRecorder()
+	handler.ServeHTTP(uiRec, uiReq)
+	if uiRec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", uiRec.Header().Get("Cache-Control"))
+	}
+	if !strings.Contains(uiRec.Body.String(), "buildVersion") {
+		t.Fatal("UI does not expose build version marker")
+	}
 }
 
 func TestModelsReturnsJSONEmptyArrayWhenUnconfigured(t *testing.T) {

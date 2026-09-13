@@ -48,6 +48,13 @@ h2 { font-size: 13px; color: #9fb1cc; margin: 28px 4px 12px; }
 .pill.warn { border-color: var(--warning); color: #fde68a; }
 .pill.bad { border-color: var(--danger); color: #fda4af; }
 
+.build-version {
+  color: #7186a5;
+  font-size: 11px;
+  margin-left: 10px;
+  white-space: nowrap;
+}
+
 .notice {
   margin: 14px 28px 0;
   padding: 11px 14px;

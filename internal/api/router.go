@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/snowzlmbot/ai-web-engine/internal/buildinfo"
 	"github.com/snowzlmbot/ai-web-engine/internal/config"
 	"github.com/snowzlmbot/ai-web-engine/internal/model"
 	"github.com/snowzlmbot/ai-web-engine/internal/session"
@@ -99,7 +100,7 @@ func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 	skillCount := len(s.skillList)
 	s.skillMu.RUnlock()
 	s.writeJSON(w, http.StatusOK, map[string]any{
-		"status": "ok", "skillCount": skillCount, "configured": s.configured(),
+		"status": "ok", "version": buildinfo.Version, "skillCount": skillCount, "configured": s.configured(),
 	})
 }
 
