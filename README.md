@@ -13,6 +13,7 @@
 - 移动端会话抽屉支持新建、恢复、删除历史会话；
 - 只读设备能力接口提供 ABI、Root、SELinux、命令、路径和 DNS 能力，作为 ShortX 指令生成上下文；
 - API Key 不出现在 GET 配置响应、日志和会话文件中；
+- 项目采用专有许可证，默认保留全部权利，不允许未经书面授权的二次开发、复制、修改、衍生、分发、再许可、销售、托管或商用；
 - Android `/system/bin/sh` 兼容的云端 `init.sh`、`start.sh`、`stop.sh`，更新采用 `.new` 原子替换并保留用户数据。
 
 ## 目录结构
@@ -122,3 +123,11 @@ ShortX 三条动作使用仓库索引生成器支持的 `type.googleapis.com/She
 模型请求由手机上的引擎进程直接发出。纯静态 Go 进程启动时会优先读取 Android `getprop net.dns1` 到 `net.dns4`，过滤失效的 `127.0.0.1`/`::1`，再通过 HTTPS 连接模型服务；不要求额外配置 DNS。`AI_WEB_ENGINE_DNS` 仅作为特殊设备的可选覆盖。
 
 如果服务端使用 OpenAI Responses API，端点填写 `https://example.com/v1/responses` 并选择“OpenAI Responses”；引擎不会再拼接 `/v1/chat/completions`。填写 `https://cc-vibe.com/v1/responses` 时，请求路径就是 `/v1/responses`。
+
+## 许可证 / License
+
+本仓库**不是开源软件**。当前及未来版本采用 [`LICENSE`](./LICENSE) 中的 **PROPRIETARY LICENSE — ALL RIGHTS RESERVED（专有许可证，保留所有权利）**。
+
+除通过 GitHub 查看公开仓库所必需的有限平台权限外，未经 `snowzlmbot` 事先书面授权，不得使用、复制、下载、修改、移植、二次开发、创建衍生作品、发布、分发、再分发、再许可、销售、托管、作为服务提供或进行商业利用。仓库公开、Fork、下载、提交 Issue 或 Pull Request 均不代表获得额外许可。
+
+第三方依赖和材料仍适用其各自许可证。此前已经依据 MIT 许可证合法取得的历史版本，其既有授权通常不能通过本次变更追溯撤销；本专有许可证适用于采用该许可证发布的当前及未来版本。具体法律适用和可执行性请咨询所在地律师。

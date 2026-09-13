@@ -1,21 +1,61 @@
-MIT License
+PROPRIETARY LICENSE — ALL RIGHTS RESERVED
 
 Copyright (c) 2026 snowzlmbot
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This repository and the original copyrightable materials contained in it are
+proprietary software and are not open-source software. All rights are reserved
+by the copyright holder.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. No license grant
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+Except for the limited platform permissions required to view this public
+repository through GitHub, no license, permission, authorization, or other
+right is granted, whether express, implied, by estoppel, or otherwise, to use,
+copy, reproduce, download, modify, adapt, translate, port, merge, publish,
+distribute, redistribute, sublicense, sell, rent, lease, host, provide as a
+service, commercially exploit, or create derivative works based on this
+repository or its original materials.
+
+In particular, without prior written authorization from the copyright holder,
+others may not:
+
+- perform secondary development or create modified or derivative versions;
+- copy or redistribute the source code, binaries, releases, documentation, or
+  substantial portions of this repository;
+- publish forks or repackaged versions outside the platform functionality
+  permitted by GitHub's terms;
+- sell, license, sublicense, host, or provide the project or a derivative as a
+  product or service; or
+- remove, alter, or obscure copyright, attribution, license, or ownership
+  notices.
+
+2. Written authorization
+
+Any exception must be granted in a separate written authorization signed by
+snowzlmbot or an expressly authorized representative. A contribution, issue,
+pull request, fork, download, or public availability of this repository does
+not itself grant any additional rights.
+
+3. Mandatory legal exceptions
+
+Nothing in this license is intended to prohibit rights that cannot lawfully be
+restricted under applicable law. Where an applicable law requires a limited
+exception, that exception is limited to the minimum extent required by law.
+
+4. Third-party materials
+
+This license applies only to materials owned or controlled by the copyright
+holder. Third-party dependencies, bundled materials, trademarks, and other
+components remain subject to their respective licenses and terms. No right to
+those materials is granted by this license.
+
+5. Disclaimer and limitation of liability
+
+THE ORIGINAL MATERIALS ARE PROVIDED "AS IS" TO THE MAXIMUM EXTENT PERMITTED
+BY LAW, WITHOUT WARRANTIES OF ANY KIND, EXPRESS OR IMPLIED. TO THE MAXIMUM
+EXTENT PERMITTED BY LAW, THE COPYRIGHT HOLDER SHALL NOT BE LIABLE FOR ANY
+CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM OR RELATED TO THE MATERIALS
+OR THEIR USE.
+
+For permission requests, contact the copyright holder through the repository
+owner account: snowzlmbot.
