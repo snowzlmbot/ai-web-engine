@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -297,19 +298,42 @@ func androidCertPool() *x509.CertPool {
 	if err != nil || pool == nil {
 		pool = x509.NewCertPool()
 	}
-	paths := []string{
+	for _, path := range []string{
 		"/system/etc/security/cacerts",
 		"/apex/com.android.conscrypt/cacerts",
 		"/system/etc/security/cacerts/ca-certificates.crt",
 		"/etc/ssl/certs/ca-certificates.crt",
 		"/etc/ssl/cert.pem",
+	} {
+		appendCertPath(pool, path)
 	}
-	for _, path := range paths {
+	return pool
+}
+
+func appendCertPath(pool *x509.CertPool, path string) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return
+	}
+	if !info.IsDir() {
 		if data, readErr := os.ReadFile(path); readErr == nil {
 			pool.AppendCertsFromPEM(data)
 		}
+		return
 	}
-	return pool
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		data, readErr := os.ReadFile(filepath.Join(path, entry.Name()))
+		if readErr == nil {
+			pool.AppendCertsFromPEM(data)
+		}
+	}
 }
 
 // androidDialContext keeps TLS verification on the original hostname while

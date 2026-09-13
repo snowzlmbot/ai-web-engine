@@ -52,7 +52,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
 ```
 
 
-发布流程会创建 `v1.1.5` Release，并提供以下独立资产：
+发布流程会创建 `v1.1.6` Release，并提供以下独立资产：
 
 - `ai-web-engine-android-arm64`：Android `arm64-v8a`，ELF64/AArch64；
 - `ai-web-engine-android-armv7`：Android `armeabi-v7a`，ELF32/ARM EABI5；
