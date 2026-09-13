@@ -61,8 +61,8 @@ jobs:
         run: |
           go build -trimpath -ldflags "-s -w" -o "${{ matrix.asset }}" ./cmd
           test -s "${{ matrix.asset }}"
-          file "${{ matrix.asset }}" | grep -F "${{ matrix.elf_class }}"
-          file "${{ matrix.asset }}" | grep -F "${{ matrix.elf_machine }}"
+          readelf -h "${{ matrix.asset }}" | grep -F "Class:" | grep -F "${{ matrix.elf_class }}"
+          readelf -h "${{ matrix.asset }}" | grep -F "Machine:" | grep -F "${{ matrix.elf_machine }}"
       - name: Upload architecture artifact
         uses: actions/upload-artifact@v4
         with:

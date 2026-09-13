@@ -212,6 +212,44 @@ func TestOpenAIEndpointAutomaticallySelectsResponsesProtocol(t *testing.T) {
 	}
 }
 
+func TestResponsesClientStreamUsesResponsesEndpoint(t *testing.T) {
+	var gotPath string
+	var gotPayload map[string]any
+	provider := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		if err := json.NewDecoder(r.Body).Decode(&gotPayload); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer test-key" {
+			http.Error(w, "missing authorization", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\n"))
+		_, _ = w.Write([]byte("data: {\"type\":\"response.completed\"}\n\n"))
+	}))
+	defer provider.Close()
+
+	cfg := config.Config{Endpoint: provider.URL + "/v1/responses", Protocol: config.ProtocolOpenAIResponses, APIKey: "test-key"}
+	client := &Client{HTTP: provider.Client()}
+	var text string
+	var done bool
+	if err := client.Stream(cfg, "gpt-5.6-sol", "medium", "skill", []session.Message{{Role: "user", Content: "hello"}}, func(delta Delta) error {
+		text += delta.Content
+		done = done || delta.Done
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != "/v1/responses" || text != "ok" || !done {
+		t.Fatalf("path/text/done = %q/%q/%v", gotPath, text, done)
+	}
+	if gotPayload["instructions"] != "skill" || gotPayload["messages"] != nil {
+		t.Fatalf("unexpected Responses payload: %#v", gotPayload)
+	}
+}
+
 func TestDNSAddressFiltering(t *testing.T) {
 	servers := []string{}
 	for _, value := range []string{"::1", "127.0.0.1", "8.8.8.8", "8.8.8.8", "2001:4860:4860::8888", "not-an-ip"} {
