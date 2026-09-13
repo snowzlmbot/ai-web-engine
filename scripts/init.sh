@@ -122,6 +122,7 @@ else
 fi
 
 INIT_CACHE_KEY=$(date +%s)
+FORCE_UPDATE=${AI_WEB_ENGINE_FORCE_UPDATE:-0}
 REMOTE_VERSION=$(curl -fsSL --retry 2 --connect-timeout 15 "$RAW_BASE_URL/version.json?ai_web_engine_init=$INIT_CACHE_KEY" 2>/dev/null | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([0-9][0-9A-Za-z._-]*\)".*/\1/p')
 [ -n "$REMOTE_VERSION" ] || fail "无法读取远端版本"
 resource_url() {
@@ -138,7 +139,7 @@ SKILL_DIR="$BASE/skills/shortx-rule-creator"
 START_SCRIPT="$BASE/scripts/start.sh"
 STOP_SCRIPT="$BASE/scripts/stop.sh"
 
-if [ "$REMOTE_VERSION" = "$LOCAL_VERSION" ] && binary_valid "$BINARY" && skills_valid "$SKILL_DIR" && script_valid "$START_SCRIPT" && script_valid "$STOP_SCRIPT" && config_valid "$CONFIG" && [ "$(wc -c < "$MASTER_KEY" | tr -d ' \n\t')" = "32" ]; then
+if [ "$FORCE_UPDATE" != 1 ] && [ "$REMOTE_VERSION" = "$LOCAL_VERSION" ] && binary_valid "$BINARY" && skills_valid "$SKILL_DIR" && script_valid "$START_SCRIPT" && script_valid "$STOP_SCRIPT" && config_valid "$CONFIG" && [ "$(wc -c < "$MASTER_KEY" | tr -d ' \n\t')" = "32" ]; then
   log "[SKIP] Android 环境已初始化且版本 $REMOTE_VERSION 校验通过"
   exit 0
 fi

@@ -10,6 +10,7 @@ PIDFILE="$BINARY.pid"
 VERSION_FILE="$BASE/config/version.json"
 PORT=6688
 URL="http://127.0.0.1:$PORT"
+BROWSER_URL="$URL"
 FORCE_UPDATE=0
 
 remote_version() {
@@ -51,14 +52,23 @@ update_init_script() {
 ensure_latest() {
   [ -n "$REMOTE_VERSION" ] || return 0
   LOCAL_VERSION=$(local_version)
-  [ "$FORCE_UPDATE" = 1 ] || [ "$LOCAL_VERSION" != "$REMOTE_VERSION" ] || return 0
+  if [ "$FORCE_UPDATE" != 1 ] && [ "$LOCAL_VERSION" = "$REMOTE_VERSION" ]; then
+    return 0
+  fi
   echo "[INFO] 本地引擎版本 ${LOCAL_VERSION:-unknown}，云端版本 $REMOTE_VERSION，正在安全更新"
   update_init_script || return 1
-  sh "$BASE/scripts/init.sh" || return 1
+  if [ "$FORCE_UPDATE" = 1 ]; then
+    AI_WEB_ENGINE_FORCE_UPDATE=1 sh "$BASE/scripts/init.sh" || return 1
+  else
+    sh "$BASE/scripts/init.sh" || return 1
+  fi
   return 0
 }
 
 REMOTE_VERSION=$(remote_version || true)
+if [ -n "$REMOTE_VERSION" ]; then
+  BROWSER_URL="$URL/?engine_version=$REMOTE_VERSION&start=$(date +%s)-$$"
+fi
 
 owned_pid() {
   candidate=$1
@@ -104,31 +114,41 @@ stop_owned_pid() {
   return 0
 }
 
-# If the exact engine PID is already serving the new port, only reopen the UI.
-# If it is an older instance (for example the former 6666 listener), migrate it
-# safely before starting the browser-safe port.
+find_owned_port_pid() {
+  for proc in /proc/[0-9]*; do
+    candidate=${proc##*/}
+    if owned_pid "$candidate" && engine_uses_port "$candidate"; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Resolve the exact engine process even when the PID file is missing or stale.
+PID=""
 if [ -s "$PIDFILE" ]; then
   PID=$(cat "$PIDFILE" 2>/dev/null || true)
-  if owned_pid "$PID" && engine_uses_port "$PID"; then
-    STATUS=$(curl -s -o /dev/null -w '%{http_code}' "$URL/health" 2>/dev/null || printf '000')
-    if [ "$STATUS" = 200 ]; then
-      RUNNING_VERSION=$(running_version || true)
-      if [ -z "$REMOTE_VERSION" ] || [ "$RUNNING_VERSION" = "$REMOTE_VERSION" ]; then
-        echo "[INFO] 已在运行 version=${RUNNING_VERSION:-unknown} health=$STATUS url=$URL"
-        am start -a android.intent.action.VIEW -d "$URL" >/dev/null 2>&1 || true
-        exit 0
-      fi
-      echo "[INFO] 检测到旧版本引擎 running=${RUNNING_VERSION:-unknown}，正在安全迁移"
-      FORCE_UPDATE=1
-    else
-      echo '[INFO] 已检测到本引擎但健康检查失败，正在安全重启'
+fi
+if [ -z "$PID" ] || ! owned_pid "$PID" || ! engine_uses_port "$PID"; then
+  PID=$(find_owned_port_pid || true)
+fi
+
+if [ -n "$PID" ] && owned_pid "$PID" && engine_uses_port "$PID"; then
+  STATUS=$(curl -s -o /dev/null -w '%{http_code}' "$URL/health" 2>/dev/null || printf '000')
+  if [ "$STATUS" = 200 ]; then
+    RUNNING_VERSION=$(running_version || true)
+    if [ -z "$REMOTE_VERSION" ] || [ "$RUNNING_VERSION" = "$REMOTE_VERSION" ]; then
+      echo "[INFO] 已在运行 version=${RUNNING_VERSION:-unknown} health=$STATUS url=$URL"
+      am start -a android.intent.action.VIEW -d "$BROWSER_URL" >/dev/null 2>&1 || true
+      exit 0
     fi
-    stop_owned_pid "$PID" || { echo '[ERROR] 旧引擎停止失败，未启动新版本'; exit 1; }
-  elif owned_pid "$PID"; then
-    echo '[INFO] 检测到旧端口引擎，正在安全迁移'
+    echo "[INFO] 检测到旧版本引擎 running=${RUNNING_VERSION:-unknown}，正在安全迁移"
     FORCE_UPDATE=1
-    stop_owned_pid "$PID" || { echo '[ERROR] 旧引擎停止失败，未启动新端口'; exit 1; }
+  else
+    echo '[INFO] 已检测到本引擎但健康检查失败，正在安全重启'
   fi
+  stop_owned_pid "$PID" || { echo '[ERROR] 旧引擎停止失败，未启动新版本'; exit 1; }
 fi
 
 ensure_latest || { echo '[ERROR] 引擎自动更新失败，未启动新版本'; exit 1; }
@@ -162,6 +182,15 @@ if [ "$STATUS" != 200 ]; then
   exit 1
 fi
 
+if [ -n "$REMOTE_VERSION" ]; then
+  RUNNING_VERSION=$(running_version || true)
+  if [ "$RUNNING_VERSION" != "$REMOTE_VERSION" ]; then
+    echo "[ERROR] 健康检查命中错误版本 running=${RUNNING_VERSION:-unknown} expected=$REMOTE_VERSION"
+    owned_pid "$PID" && kill -TERM "$PID" 2>/dev/null || true
+    exit 1
+  fi
+fi
+
 # Android default browser; do not use a fixed browser package.
-am start -a android.intent.action.VIEW -d "$URL" >/dev/null 2>&1 || echo "[WARN] 默认浏览器打开失败，请手动访问 $URL"
+am start -a android.intent.action.VIEW -d "$BROWSER_URL" >/dev/null 2>&1 || echo "[WARN] 默认浏览器打开失败，请手动访问 $BROWSER_URL"
 exit 0

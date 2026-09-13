@@ -1,4 +1,4 @@
 package buildinfo
 
 // Version is the release version embedded in the engine and exposed by /health.
-const Version = "1.0.8"
+const Version = "1.0.9"
