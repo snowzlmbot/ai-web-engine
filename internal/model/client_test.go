@@ -17,6 +17,9 @@ func TestEndpointURL(t *testing.T) {
 	}{
 		{"openai-base", "https://api.example.test", config.ProtocolOpenAI, "https://api.example.test/v1/chat/completions"},
 		{"openai-full", "https://api.example.test/v1/chat/completions", config.ProtocolOpenAI, "https://api.example.test/v1/chat/completions"},
+		{"responses-base", "https://api.example.test", config.ProtocolOpenAIResponses, "https://api.example.test/v1/responses"},
+		{"responses-full", "https://api.example.test/v1/responses", config.ProtocolOpenAIResponses, "https://api.example.test/v1/responses"},
+		{"responses-trailing-slash", "https://api.example.test/v1/responses/", config.ProtocolOpenAIResponses, "https://api.example.test/v1/responses"},
 		{"anthropic-base", "https://api.example.test", config.ProtocolAnthropic, "https://api.example.test/v1/messages"},
 		{"anthropic-full", "https://api.example.test/v1/messages", config.ProtocolAnthropic, "https://api.example.test/v1/messages"},
 	}
@@ -121,6 +124,110 @@ func TestClientStreamOverHTTPS(t *testing.T) {
 	}
 	if text != "ShortX Rule" || !done {
 		t.Fatalf("stream = %q, done=%v", text, done)
+	}
+}
+
+func TestResponsesRequestAndSSE(t *testing.T) {
+	cfg := config.Config{Endpoint: "https://cc-vibe.com/v1/responses", Protocol: config.ProtocolOpenAIResponses, APIKey: "test-key"}
+	body, headers, err := request(cfg, "gpt-5.6-sol", "medium", "skill instructions", []session.Message{{Role: "user", Content: "hello"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if headers["Authorization"] != "Bearer test-key" {
+		t.Fatalf("authorization header = %q", headers["Authorization"])
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["model"] != "gpt-5.6-sol" || payload["stream"] != true || payload["instructions"] != "skill instructions" {
+		t.Fatalf("unexpected Responses payload: %#v", payload)
+	}
+	if _, ok := payload["messages"]; ok {
+		t.Fatal("Responses payload must not contain messages")
+	}
+	input, ok := payload["input"].([]any)
+	if !ok || len(input) != 1 {
+		t.Fatalf("unexpected Responses input: %#v", payload["input"])
+	}
+	message, ok := input[0].(map[string]any)
+	if !ok || message["role"] != "user" {
+		t.Fatalf("unexpected Responses message: %#v", input[0])
+	}
+	content, ok := message["content"].([]any)
+	if !ok || len(content) != 1 {
+		t.Fatalf("unexpected Responses content: %#v", message["content"])
+	}
+	block, ok := content[0].(map[string]any)
+	if !ok || block["type"] != "input_text" || block["text"] != "hello" {
+		t.Fatalf("unexpected Responses content block: %#v", content[0])
+	}
+	reasoning, ok := payload["reasoning"].(map[string]any)
+	if !ok || reasoning["effort"] != "medium" {
+		t.Fatalf("unexpected Responses reasoning: %#v", payload["reasoning"])
+	}
+
+	stream := "data: {\"type\":\"response.output_text.delta\",\"delta\":\"hello \"}\n\n" +
+		"data: {\"type\":\"response.output_text.delta\",\"delta\":\"world\"}\n\n" +
+		"data: {\"type\":\"response.completed\"}\n\n"
+	var text string
+	var done bool
+	if err := parseSSE(config.ProtocolOpenAIResponses, strings.NewReader(stream), func(delta Delta) error {
+		text += delta.Content
+		done = done || delta.Done
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if text != "hello world" || !done {
+		t.Fatalf("Responses SSE = %q, done=%v", text, done)
+	}
+}
+
+func TestOpenAIEndpointAutomaticallySelectsResponsesProtocol(t *testing.T) {
+	cfg := config.Config{Endpoint: "https://cc-vibe.com/v1/responses", Protocol: config.ProtocolOpenAI, APIKey: "test-key"}
+	body, headers, err := request(cfg, "gpt-5.6-sol", "off", "skill", []session.Message{{Role: "user", Content: "hello"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoint, err := endpointURL(cfg.Endpoint, effectiveProtocol(cfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if endpoint != "https://cc-vibe.com/v1/responses" {
+		t.Fatalf("auto-detected endpoint = %q", endpoint)
+	}
+	if headers["Authorization"] != "Bearer test-key" {
+		t.Fatalf("authorization header = %q", headers["Authorization"])
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := payload["input"]; !ok {
+		t.Fatalf("auto-detected request did not use Responses input: %#v", payload)
+	}
+	if _, ok := payload["messages"]; ok {
+		t.Fatalf("auto-detected request still used Chat messages: %#v", payload)
+	}
+}
+
+func TestDNSAddressFiltering(t *testing.T) {
+	servers := []string{}
+	for _, value := range []string{"::1", "127.0.0.1", "8.8.8.8", "8.8.8.8", "2001:4860:4860::8888", "not-an-ip"} {
+		servers = appendUniqueDNS(servers, value)
+	}
+	want := []string{"8.8.8.8", "2001:4860:4860::8888"}
+	if strings.Join(servers, ",") != strings.Join(want, ",") {
+		t.Fatalf("DNS servers = %v, want %v", servers, want)
+	}
+}
+
+func TestNewClientUsesAndroidAwareTransport(t *testing.T) {
+	client := NewClient()
+	transport, ok := client.HTTP.Transport.(*http.Transport)
+	if !ok || transport.DialContext == nil {
+		t.Fatal("NewClient did not install an Android-aware DialContext")
 	}
 }
 

@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+env:
+  CGO_ENABLED: 0
+  GOOS: linux
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -20,21 +24,79 @@ jobs:
         run: |
           go test ./...
           go vet ./...
+
   build:
     needs: test
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goarch: arm64
+            asset: ai-web-engine-android-arm64
+            elf_class: ELF64
+            elf_machine: AArch64
+          - goarch: arm
+            goarm: '7'
+            asset: ai-web-engine-android-armv7
+            elf_class: ELF32
+            elf_machine: ARM
+          - goarch: amd64
+            asset: ai-web-engine-android-x86_64
+            elf_class: ELF64
+            elf_machine: X86-64
+          - goarch: 386
+            asset: ai-web-engine-android-x86
+            elf_class: ELF32
+            elf_machine: Intel 80386
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: '1.22'
-      - name: Build Android ARM64 static binary
+      - name: Build ${{ matrix.asset }}
+        env:
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
         run: |
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o ai-web-engine-android-arm64 ./cmd
-          test -s ai-web-engine-android-arm64
+          go build -trimpath -ldflags "-s -w" -o "${{ matrix.asset }}" ./cmd
+          test -s "${{ matrix.asset }}"
+          file "${{ matrix.asset }}" | grep -F "${{ matrix.elf_class }}"
+          file "${{ matrix.asset }}" | grep -F "${{ matrix.elf_machine }}"
+      - name: Upload architecture artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
+          if-no-files-found: error
+
+  package:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: ai-web-engine-android-*
+          merge-multiple: true
+      - name: Validate and package all architectures
+        run: |
+          set -eu
+          test "$(find dist -maxdepth 1 -type f | wc -l)" -eq 4
+          for f in dist/*; do test -s "$f"; done
+          cp manifest-android.json dist/manifest-android.json
+          (cd dist && sha256sum ai-web-engine-android-* manifest-android.json > SHA256SUMS)
+          (cd dist && zip -9 -r ../ai-web-engine-android-all.zip ai-web-engine-android-* manifest-android.json SHA256SUMS)
+          test -s ai-web-engine-android-all.zip
       - name: Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: ai-web-engine-android-arm64
+          files: |
+            dist/ai-web-engine-android-arm64
+            dist/ai-web-engine-android-armv7
+            dist/ai-web-engine-android-x86_64
+            dist/ai-web-engine-android-x86
+            ai-web-engine-android-all.zip
           generate_release_notes: true

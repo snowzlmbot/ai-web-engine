@@ -9,12 +9,12 @@
     }
   ],
   "id": "DA-ai-web-engine-init-001",
-  "lastUpdateTime": "1789277474758",
+  "lastUpdateTime": "1789287000000",
   "createTime": "0",
   "author": {"name":"snowzlmbot"},
   "title": "AI Web 引擎首次环境初始化",
-  "description": "ShortX 首次初始化指令会从云端拉取并执行 `init.sh`。该脚本只在 Android Root ARM64 设备上继续，真实下载并安装 Release 二进制和完整 skill；它会校验 ELF64/AArch64、六个 references、`master.key` 32 字节以及配置和目录。只有所有检查通过才会写入版本完成标记。",
-  "versionCode": "8",
+  "description": "ShortX 首次初始化指令会从云端拉取并执行 `init.sh`。脚本会按 Android ABI 自动选择 arm64-v8a、armeabi-v7a、x86_64 或 x86 引擎，校验 ELF class/machine、完整 skill、`master.key` 32 字节以及配置和目录；引擎支持 OpenAI Chat、OpenAI Responses、Anthropic，并自动读取 Android 系统 DNS。",
+  "versionCode": "11",
   "hook": {},
   "quit": {},
   "parameters": []

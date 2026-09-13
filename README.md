@@ -4,12 +4,12 @@
 
 ## 功能
 
-- OpenAI 兼容协议和 Anthropic Messages SSE 流式响应；
+- OpenAI Chat Completions、OpenAI Responses 和 Anthropic Messages SSE 流式响应；
 - 模型列表、模型切换和推理等级切换；
 - 新建/列出/删除/恢复历史会话；
 - 会话使用 AES-256-GCM，`config/master.key` 与 `sessions/*.enc` 权限为 600；
 - 启动时递归读取 `skills/**/SKILL.md`，并把 `shortx-rule-creator` 约束放在 system 消息首位；
-- 配置页保存 provider、endpoint、protocol、API Key、默认模型和模型列表；
+- 配置页保存 provider、endpoint、protocol、API Key、默认模型和模型列表；协议支持 OpenAI Chat、OpenAI Responses、Anthropic；
 - API Key 不出现在 GET 配置响应、日志和会话文件中；
 - Android `/system/bin/sh` 兼容的云端 `init.sh`、`start.sh`、`stop.sh`，更新采用 `.new` 原子替换并保留用户数据。
 
@@ -35,18 +35,30 @@ ai-web-engine/
 ├── .github/             # GitHub Actions
 ├── go.mod
 ├── version.json
+├── manifest-android.json # Android 多架构资产清单
 └── README.md
 ```
 ## 构建
 
 ```bash
+# 单架构示例
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
   go build -trimpath -ldflags "-s -w" \
   -o ai-web-engine-android-arm64 ./cmd
+
+# 完整四架构包由 GitHub Actions 自动构建并发布
 ```
 
 
-`version.json` 当前为 `1.0.9`。发布流程会创建 `v1.0.9` Release；启动脚本会检查正在运行的引擎版本，发现旧版本时按 PID 精确停止并自动执行最新初始化脚本；浏览器地址带版本参数以避免旧标签页复用；初始化会一次性下载并验证 Android ARM64 引擎、skills ZIP、`start.sh` 和 `stop.sh`，启动脚本使用浏览器安全端口 `6688`。
+发布流程会创建 `v1.1.0` Release，并提供以下独立资产：
+
+- `ai-web-engine-android-arm64`：Android `arm64-v8a`，ELF64/AArch64；
+- `ai-web-engine-android-armv7`：Android `armeabi-v7a`，ELF32/ARM EABI5；
+- `ai-web-engine-android-x86_64`：Android `x86_64`，ELF64/x86-64；
+- `ai-web-engine-android-x86`：Android `x86`，ELF32/i386；
+- `ai-web-engine-android-all.zip`：包含以上四个二进制、`manifest-android.json` 和 `SHA256SUMS` 的全架构包。
+
+初始化会读取 Android `ro.product.cpu.abi`，自动选择对应二进制，并同时校验 ELF class 和 machine；不会把全架构 ZIP 解压到手机运行目录。引擎支持 OpenAI Chat、OpenAI Responses、Anthropic SSE，并自动读取 Android 系统 DNS。
 
 ## Android 部署
 
@@ -60,7 +72,7 @@ sh scripts/start.sh
 
 启动后会监听并打开 `http://127.0.0.1:6688`；不要再使用旧的 `6666`。
 
-`scripts/init.sh` 的 ZIP 校验兼容 Android 常见的 `unzip` 实现：优先使用 `unzip -Z1`，不支持时回退到标准 `unzip -l`，并额外运行 `unzip -t`、路径安全检查和解压后完整性检查。初始化会同时准备引擎、skills、`start.sh`、`stop.sh`、配置模板、`master.key` 和目录；所有资源先进入临时文件，全部通过后统一提交，失败则保留旧资源且不写完成标记。`scripts/start.sh` 固定使用浏览器允许的本机端口 `6688`。`6666` 会被 Chromium/Chrome 拒绝并显示 `ERR_UNSAFE_PORT`；启动时如果 PID 文件对应旧的 6666 引擎，会先按可执行文件精确校验并安全迁移。
+`scripts/init.sh` 的 ZIP 校验兼容 Android 常见的 `unzip` 实现：优先使用 `unzip -Z1`，不支持时回退到标准 `unzip -l`，并额外运行 `unzip -t`、路径安全检查和解压后完整性检查。初始化会同时准备与当前 ABI 匹配的引擎、skills、`start.sh`、`stop.sh`、配置模板、`master.key` 和目录；所有资源先进入临时文件，全部通过后统一提交，失败则保留旧资源且不写完成标记。`scripts/start.sh` 固定使用浏览器允许的本机端口 `6688`。`6666` 会被 Chromium/Chrome 拒绝并显示 `ERR_UNSAFE_PORT`；启动时如果 PID 文件对应旧的 6666 引擎，会先按可执行文件精确校验并安全迁移。
 
 ## API
 
@@ -99,3 +111,9 @@ ShortX 三条动作使用仓库索引生成器支持的 `type.googleapis.com/She
 
 
 默认配置模板不包含真实 API Key。首次配置通过 Web UI 写入 `/data/local/ai-instruction/config/model_config.json`，该文件使用 600 权限；Android Keystore 不属于 Go 纯静态二进制本身的可调用标准库能力，因此本项目不伪称已经接入 Keystore。需要 Keystore 时，应由 Android 外部安全桥接程序提供，并把 Key 以环境变量注入服务。
+
+## Android 网络与协议
+
+模型请求由手机上的引擎进程直接发出。纯静态 Go 进程启动时会优先读取 Android `getprop net.dns1` 到 `net.dns4`，过滤失效的 `127.0.0.1`/`::1`，再通过 HTTPS 连接模型服务；不要求额外配置 DNS。`AI_WEB_ENGINE_DNS` 仅作为特殊设备的可选覆盖。
+
+如果服务端使用 OpenAI Responses API，端点填写 `https://example.com/v1/responses` 并选择“OpenAI Responses”；引擎不会再拼接 `/v1/chat/completions`。填写 `https://cc-vibe.com/v1/responses` 时，请求路径就是 `/v1/responses`。

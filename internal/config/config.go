@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	ProtocolOpenAI    = "openai"
-	ProtocolAnthropic = "anthropic"
+	ProtocolOpenAI          = "openai"
+	ProtocolOpenAIResponses = "openai-responses"
+	ProtocolAnthropic       = "anthropic"
 )
 
 type Model struct {
@@ -120,7 +121,7 @@ func Validate(cfg Config) error {
 	if strings.TrimSpace(cfg.Provider) == "" {
 		return errors.New("provider is required")
 	}
-	if cfg.Protocol != ProtocolOpenAI && cfg.Protocol != ProtocolAnthropic {
+	if cfg.Protocol != ProtocolOpenAI && cfg.Protocol != ProtocolOpenAIResponses && cfg.Protocol != ProtocolAnthropic {
 		return fmt.Errorf("unsupported protocol %q", cfg.Protocol)
 	}
 	u, err := url.Parse(cfg.Endpoint)

@@ -1,0 +1,35 @@
+{
+  "format": 1,
+  "version": "1.1.0",
+  "artifacts": [
+    {
+      "abi": "arm64-v8a",
+      "goarch": "arm64",
+      "asset": "ai-web-engine-android-arm64",
+      "elfClass": "ELF64",
+      "elfMachine": "AArch64"
+    },
+    {
+      "abi": "armeabi-v7a",
+      "goarch": "arm",
+      "goarm": "7",
+      "asset": "ai-web-engine-android-armv7",
+      "elfClass": "ELF32",
+      "elfMachine": "ARM"
+    },
+    {
+      "abi": "x86_64",
+      "goarch": "amd64",
+      "asset": "ai-web-engine-android-x86_64",
+      "elfClass": "ELF64",
+      "elfMachine": "X86-64"
+    },
+    {
+      "abi": "x86",
+      "goarch": "386",
+      "asset": "ai-web-engine-android-x86",
+      "elfClass": "ELF32",
+      "elfMachine": "Intel 80386"
+    }
+  ]
+}
