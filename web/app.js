@@ -350,7 +350,7 @@ async function refresh({ openSettings = false } = {}) {
     renderModels(selectedProviderId(), state.session?.modelId || "");
     const sessions = await api("/api/sessions").then((response) => response.json());
     renderSessions(sessions);
-    if (!health.configured || state.providers.length === 0) {
+    if (!ready || state.providers.length === 0) {
       showNotice("服务已启动，但还没有完整模型配置。请在“模型设置”中新增服务商并保存本地 Key。", "warn");
       if (openSettings || state.providers.length === 0) showSettings(true);
     } else {

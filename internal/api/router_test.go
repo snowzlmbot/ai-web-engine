@@ -561,3 +561,82 @@ func TestChatUsesSessionProviderKey(t *testing.T) {
 		t.Fatalf("provider B chat status=%d body=%s", chatRec.Code, chatRec.Body.String())
 	}
 }
+
+func TestChatFallsBackAfterSessionProviderIsDeleted(t *testing.T) {
+	provider := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer key-a" {
+			http.Error(w, "wrong fallback provider key", http.StatusUnauthorized)
+			return
+		}
+		var payload struct {
+			Model string `json:"model"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if payload.Model != "a-model" {
+			http.Error(w, "wrong fallback model", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"fallback-ok\"}}]}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer provider.Close()
+
+	root := t.TempDir()
+	configPath := filepath.Join(root, "config", "model_config.json")
+	cfg := config.Config{
+		Providers: []config.Provider{
+			{ID: "provider-a", Name: "Provider A", Endpoint: provider.URL, Protocol: config.ProtocolOpenAI, DefaultModelID: "a-model", Models: []config.Model{{ID: "a-model", Enabled: true}}},
+			{ID: "provider-b", Name: "Provider B", Endpoint: provider.URL, Protocol: config.ProtocolOpenAI, DefaultModelID: "b-model", Models: []config.Model{{ID: "b-model", Enabled: true}}},
+		},
+		ActiveProviderID: "provider-a",
+		ReasoningLevel:   "xhigh",
+	}
+	if err := config.Save(configPath, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.SaveProviderKey(configPath, "provider-a", "key-a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.SaveProviderKey(configPath, "provider-b", "key-b"); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := config.LoadRuntime(configPath, func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := newTestServerWithRoot(t, root, configPath, loaded)
+	server.client = &model.Client{HTTP: provider.Client()}
+	handler := server.Handler()
+
+	createRec := httptest.NewRecorder()
+	handler.ServeHTTP(createRec, httptest.NewRequest(http.MethodPost, "/api/sessions", nil))
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", createRec.Code, createRec.Body.String())
+	}
+	var created session.Session
+	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	patchReq := httptest.NewRequest(http.MethodPatch, "/api/sessions/"+created.ID, strings.NewReader(`{"providerId":"provider-b","modelId":"b-model","reasoningLevel":"max"}`))
+	patchReq.Header.Set("Content-Type", "application/json")
+	patchRec := httptest.NewRecorder()
+	handler.ServeHTTP(patchRec, patchReq)
+	if patchRec.Code != http.StatusOK {
+		t.Fatalf("patch status=%d body=%s", patchRec.Code, patchRec.Body.String())
+	}
+	if err := server.deleteProvider("provider-b"); err != nil {
+		t.Fatal(err)
+	}
+	chatBody := strings.NewReader(`{"sessionId":"` + created.ID + `","message":"continue"}`)
+	chatReq := httptest.NewRequest(http.MethodPost, "/api/chat", chatBody)
+	chatReq.Header.Set("Content-Type", "application/json")
+	chatRec := httptest.NewRecorder()
+	handler.ServeHTTP(chatRec, chatReq)
+	if chatRec.Code != http.StatusOK || !strings.Contains(chatRec.Body.String(), "fallback-ok") {
+		t.Fatalf("fallback chat status=%d body=%s", chatRec.Code, chatRec.Body.String())
+	}
+}

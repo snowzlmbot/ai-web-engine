@@ -653,6 +653,9 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 	if providerID == "" {
 		providerID = activeCfg.ActiveProviderID
 	}
+	if _, metadataErr := s.providerMetadataConfig(providerID); metadataErr != nil && req.ProviderID == "" {
+		providerID = activeCfg.ActiveProviderID
+	}
 	cfg, err := s.currentProviderConfig(providerID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -660,7 +663,15 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 	}
 	modelID, err := config.SelectModel(cfg, req.ModelID)
 	if req.ModelID == "" {
-		modelID, err = config.SelectModel(cfg, item.ModelID)
+		if item.ModelID != "" {
+			if selected, itemErr := config.SelectModel(cfg, item.ModelID); itemErr == nil {
+				modelID = selected
+			} else {
+				modelID, err = config.SelectModel(cfg, "")
+			}
+		} else {
+			modelID, err = config.SelectModel(cfg, "")
+		}
 	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
