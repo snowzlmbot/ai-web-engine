@@ -410,7 +410,7 @@ func TestSessionSettingsPersistAcrossReload(t *testing.T) {
 	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
 		t.Fatal(err)
 	}
-	patchBody := `{"providerId":"provider-b","modelId":"b-model","reasoningLevel":"max"}`
+	patchBody := `{"providerId":"provider-b","modelId":"b-model","reasoningLevel":"max","reasoningDisplay":"all"}`
 	patchReq := httptest.NewRequest(http.MethodPatch, "/api/sessions/"+created.ID, strings.NewReader(patchBody))
 	patchReq.Header.Set("Content-Type", "application/json")
 	patchRec := httptest.NewRecorder()
@@ -422,7 +422,7 @@ func TestSessionSettingsPersistAcrossReload(t *testing.T) {
 	if err := json.Unmarshal(patchRec.Body.Bytes(), &patched); err != nil {
 		t.Fatal(err)
 	}
-	if patched.ProviderID != "provider-b" || patched.ModelID != "b-model" || patched.ReasoningLevel != "max" {
+	if patched.ProviderID != "provider-b" || patched.ModelID != "b-model" || patched.ReasoningLevel != "max" || patched.ReasoningDisplay != "all" {
 		t.Fatalf("unexpected patched settings: %+v", patched)
 	}
 	getRec := httptest.NewRecorder()
@@ -431,7 +431,7 @@ func TestSessionSettingsPersistAcrossReload(t *testing.T) {
 	if err := json.Unmarshal(getRec.Body.Bytes(), &loaded); err != nil {
 		t.Fatal(err)
 	}
-	if loaded.ProviderID != "provider-b" || loaded.ModelID != "b-model" || loaded.ReasoningLevel != "max" {
+	if loaded.ProviderID != "provider-b" || loaded.ModelID != "b-model" || loaded.ReasoningLevel != "max" || loaded.ReasoningDisplay != "all" {
 		t.Fatalf("settings did not persist: %+v", loaded)
 	}
 	badReq := httptest.NewRequest(http.MethodPatch, "/api/sessions/"+created.ID, strings.NewReader(`{"modelId":"a-model"}`))

@@ -142,10 +142,13 @@ button:not(.primary):hover:not(:disabled) { background: #203250; border-color: #
 
 .chat {
   flex: 1;
-  padding: 30px;
+  width: min(100%, 980px);
+  margin: 0 auto;
+  padding: 30px clamp(12px, 4vw, 42px);
   overflow: auto;
   display: grid;
   align-content: start;
+  justify-items: center;
   gap: 14px;
 }
 .empty-state { align-self: center; justify-self: center; color: var(--muted); font-size: 14px; }
@@ -178,8 +181,11 @@ button:not(.primary):hover:not(:disabled) { background: #203250; border-color: #
 .code-block pre code { font: inherit; color: inherit; }
 .message-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(80, 112, 150, .38); }
 .message-actions button { margin: 0; }
+.message.reasoning { justify-self: center; width: min(100%, 820px); color: #a8bad4; background: #0d1728; border: 1px dashed #3b526f; font-size: 12px; opacity: .9; }
+.message.reasoning::before { content: "推理草稿"; display: block; margin-bottom: 7px; color: #7dd3fc; font-size: 11px; font-weight: 700; }
 .message.user { justify-self: end; background: #1d4d55; }
-.message.assistant { justify-self: start; background: var(--panel); border: 1px solid var(--line); }
+.message.user, .message.assistant { width: min(100%, 820px); }
+.message.assistant { justify-self: center; background: var(--panel); border: 1px solid var(--line); }
 .message.error-message { border-color: var(--danger); color: #fecdd3; }
 
 #composer { padding: 18px 28px; display: flex; gap: 12px; border-top: 1px solid var(--line); }

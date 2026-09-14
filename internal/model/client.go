@@ -42,8 +42,9 @@ func NewClient() *Client {
 }
 
 type Delta struct {
-	Content string
-	Done    bool
+	Content   string
+	Reasoning string
+	Done      bool
 }
 
 func (c *Client) Stream(cfg config.Config, modelID, reasoning, system string, messages []session.Message, emit func(Delta) error) error {
@@ -228,15 +229,18 @@ func parseSSE(protocol string, reader io.Reader, emit func(Delta) error) error {
 		if protocol == config.ProtocolOpenAIResponses {
 			typeName, _ := object["type"].(string)
 			switch typeName {
+			case "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
+				text, _ := object["delta"].(string)
+				return emit(Delta{Reasoning: text})
 			case "response.completed", "response.done":
 				return emit(Delta{Done: true})
 			case "response.failed", "response.error":
 				return fmt.Errorf("Responses API returned %s", typeName)
 			}
 		}
-		token := extract(protocol, object)
-		if token != "" {
-			return emit(Delta{Content: token})
+		delta := extract(protocol, object)
+		if delta.Content != "" || delta.Reasoning != "" {
+			return emit(delta)
 		}
 		return nil
 	}
@@ -258,37 +262,53 @@ func parseSSE(protocol string, reader io.Reader, emit func(Delta) error) error {
 	return flush()
 }
 
-func extract(protocol string, object map[string]any) string {
+func extract(protocol string, object map[string]any) Delta {
 	if protocol == config.ProtocolOpenAIResponses {
 		if typeName, _ := object["type"].(string); typeName == "response.output_text.delta" {
 			text, _ := object["delta"].(string)
-			return text
+			return Delta{Content: text}
 		}
 		if text, ok := object["delta"].(string); ok {
-			return text
+			return Delta{Content: text}
 		}
-		return ""
+		return Delta{}
 	}
 	if protocol == config.ProtocolAnthropic {
 		if delta, ok := object["delta"].(map[string]any); ok {
+			deltaType, _ := delta["type"].(string)
+			if deltaType == "thinking_delta" {
+				text, _ := delta["thinking"].(string)
+				return Delta{Reasoning: text}
+			}
 			if text, ok := delta["text"].(string); ok {
-				return text
+				return Delta{Content: text}
 			}
 		}
-		return ""
+		if content, ok := object["content_block"].(map[string]any); ok {
+			if contentType, _ := content["type"].(string); contentType == "thinking_delta" {
+				text, _ := content["thinking"].(string)
+				return Delta{Reasoning: text}
+			}
+		}
+		return Delta{}
 	}
 	if text, ok := object["delta"].(string); ok {
-		return text
+		return Delta{Content: text}
 	}
 	if choices, ok := object["choices"].([]any); ok && len(choices) > 0 {
 		if first, ok := choices[0].(map[string]any); ok {
 			if delta, ok := first["delta"].(map[string]any); ok {
-				text, _ := delta["content"].(string)
-				return text
+				var result Delta
+				result.Reasoning, _ = delta["reasoning_content"].(string)
+				if result.Reasoning == "" {
+					result.Reasoning, _ = delta["reasoning"].(string)
+				}
+				result.Content, _ = delta["content"].(string)
+				return result
 			}
 		}
 	}
-	return ""
+	return Delta{}
 }
 
 func UserAgent() string { return "ai-web-engine/1.0" }

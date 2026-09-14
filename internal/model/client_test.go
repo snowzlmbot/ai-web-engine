@@ -90,6 +90,40 @@ func TestParseSSE(t *testing.T) {
 	}
 }
 
+func TestParseSSESeparatesReasoningFromContent(t *testing.T) {
+	input := "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"先分析\"}}]}\n\n" +
+		"data: {\"choices\":[{\"delta\":{\"content\":\"正式回答\"}}]}\n\n" +
+		"data: [DONE]\n\n"
+	var reasoning, content string
+	if err := parseSSE(config.ProtocolOpenAI, strings.NewReader(input), func(delta Delta) error {
+		reasoning += delta.Reasoning
+		content += delta.Content
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if reasoning != "先分析" || content != "正式回答" {
+		t.Fatalf("reasoning=%q content=%q", reasoning, content)
+	}
+}
+
+func TestParseResponsesReasoningSummary(t *testing.T) {
+	input := "data: {\"type\":\"response.reasoning_summary_text.delta\",\"delta\":\"草稿\"}\n\n" +
+		"data: {\"type\":\"response.output_text.delta\",\"delta\":\"正文\"}\n\n" +
+		"data: {\"type\":\"response.completed\"}\n\n"
+	var reasoning, content string
+	if err := parseSSE(config.ProtocolOpenAIResponses, strings.NewReader(input), func(delta Delta) error {
+		reasoning += delta.Reasoning
+		content += delta.Content
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if reasoning != "草稿" || content != "正文" {
+		t.Fatalf("reasoning=%q content=%q", reasoning, content)
+	}
+}
+
 func TestClientStreamOverHTTPS(t *testing.T) {
 	var gotAuth string
 	var gotPath string
