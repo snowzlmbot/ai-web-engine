@@ -49,6 +49,142 @@ function setBusy(button, busy, busyText) {
   }
 }
 
+function escapeHTML(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[character]));
+}
+
+function inlineMarkdown(value) {
+  let output = escapeHTML(value);
+  const codeSpans = [];
+  output = output.replace(/`([^`\n]+)`/g, (_, code) => {
+    const token = `\uE000${codeSpans.length}\uE001`;
+    codeSpans.push(`<code>${code}</code>`);
+    return token;
+  });
+  output = output.replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer noopener">$1</a>');
+  output = output.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
+  output = output.replace(/__([^_\n]+)__/g, "<strong>$1</strong>");
+  output = output.replace(/(^|[^\w])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>");
+  output = output.replace(/(^|[^\w])_([^_\n]+)_(?!\w)/g, "$1<em>$2</em>");
+  codeSpans.forEach((code, index) => {
+    output = output.replace(`\uE000${index}\uE001`, code);
+  });
+  return output;
+}
+
+function appendMarkdown(parent, value) {
+  const lines = String(value).split("\n");
+  let list = null;
+  let listType = "";
+  lines.forEach((line) => {
+    const heading = line.match(/^(#{1,6})[ \t]+(.*)$/);
+    const bullet = line.match(/^[-*+][ \t]+(.*)$/);
+    const ordered = line.match(/^\d+[.)][ \t]+(.*)$/);
+    if (heading) {
+      list = null;
+      listType = "";
+      const element = document.createElement(`h${Math.min(6, heading[1].length)}`);
+      element.innerHTML = inlineMarkdown(heading[2]);
+      parent.appendChild(element);
+      return;
+    }
+    if (bullet || ordered) {
+      const nextType = bullet ? "ul" : "ol";
+      if (!list || listType !== nextType) {
+        listType = nextType;
+        list = document.createElement(nextType);
+        parent.appendChild(list);
+      }
+      const item = document.createElement("li");
+      item.innerHTML = inlineMarkdown((bullet || ordered)[1]);
+      list.appendChild(item);
+      return;
+    }
+    list = null;
+    listType = "";
+    if (line === "") {
+      const spacer = document.createElement("div");
+      spacer.className = "rich-spacer";
+      parent.appendChild(spacer);
+      return;
+    }
+    const paragraph = document.createElement("p");
+    paragraph.innerHTML = inlineMarkdown(line);
+    parent.appendChild(paragraph);
+  });
+}
+
+function renderRichText(messageElement, value) {
+  const content = messageElement.querySelector(".rich-content");
+  if (!content) return;
+  content.replaceChildren();
+  const lines = String(value ?? "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+  let prose = [];
+  const flushProse = () => {
+    if (prose.length > 0) appendMarkdown(content, prose.join("\n"));
+    prose = [];
+  };
+  for (let index = 0; index < lines.length; index += 1) {
+    const opening = lines[index].match(/^(`{3,})([^\n]*)$/);
+    if (!opening) {
+      prose.push(lines[index]);
+      continue;
+    }
+    const closingPattern = new RegExp(`^\`{${opening[1].length},}[ \\t]*$`);
+    let closingIndex = -1;
+    for (let candidate = index + 1; candidate < lines.length; candidate += 1) {
+      if (closingPattern.test(lines[candidate])) {
+        closingIndex = candidate;
+        break;
+      }
+    }
+    if (closingIndex < 0) {
+      prose.push(lines[index]);
+      continue;
+    }
+    flushProse();
+    const block = document.createElement("section");
+    block.className = "code-block";
+    const toolbar = document.createElement("div");
+    toolbar.className = "code-toolbar";
+    const language = document.createElement("span");
+    language.className = "code-language";
+    language.textContent = opening[2].trim() || "text";
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "code-copy";
+    copy.textContent = "复制代码";
+    const raw = lines.slice(index + 1, closingIndex).join("\n");
+    copy.addEventListener("click", () => copyText(raw, "代码已复制。"));
+    toolbar.append(language, copy);
+    const pre = document.createElement("pre");
+    const code = document.createElement("code");
+    code.textContent = raw;
+    pre.appendChild(code);
+    block.append(toolbar, pre);
+    content.appendChild(block);
+    index = closingIndex;
+  }
+  flushProse();
+}
+
+function setMessageText(messageElement, value, validate = false) {
+  if (!messageElement) return;
+  messageElement.dataset.rawText = String(value ?? "");
+  renderRichText(messageElement, value);
+  if (validate && messageElement.classList.contains("assistant")) {
+    decorateShortXMessage(messageElement, messageElement.dataset.rawText).catch((error) => {
+      showNotice(`ShortX 指令格式校验失败：${error.message}`, "error");
+    });
+  }
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, {
     ...options,
@@ -66,11 +202,135 @@ async function api(path, options = {}) {
   return response;
 }
 
-function addMessage(role, text = "") {
+async function validateShortXText(text) {
+  return api("/api/shortx/validate", {
+    method: "POST",
+    body: JSON.stringify({ text }),
+  }).then((response) => response.json());
+}
+
+function kindLabel(kind) {
+  return kind === "rule" ? "自动指令" : "一键指令";
+}
+
+async function copyText(text, notice = "内容已复制。") {
+  let copied = false;
+  if (navigator.clipboard && window.isSecureContext !== false) {
+    try {
+      await navigator.clipboard.writeText(text);
+      copied = true;
+    } catch {
+      copied = false;
+    }
+  }
+  if (!copied) {
+    const input = document.createElement("textarea");
+    input.value = text;
+    input.setAttribute("readonly", "");
+    input.style.position = "fixed";
+    input.style.opacity = "0";
+    document.body.appendChild(input);
+    input.select();
+    if (!document.execCommand("copy")) throw new Error("浏览器拒绝访问剪贴板");
+    input.remove();
+  }
+  showNotice(notice, "info");
+}
+
+function downloadText(filename, text) {
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function importShortX(documentInfo) {
+  if (typeof File !== "function") {
+    await copyText(documentInfo.canonical);
+    downloadText(documentInfo.filename, documentInfo.canonical);
+    showNotice(`当前浏览器不支持文件分享，已复制并下载官方格式文件 ${documentInfo.filename}。`, "warn");
+    return;
+  }
+  const file = new File([documentInfo.canonical], documentInfo.filename, { type: "text/plain;charset=utf-8" });
+  if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+    await navigator.share({ title: `导入 ShortX：${documentInfo.title}`, files: [file] });
+    showNotice(`已打开系统分享面板，请选择 ShortX 导入这份${kindLabel(documentInfo.kind)}。`, "info");
+    return;
+  }
+  if (navigator.share) {
+    await navigator.share({ title: `导入 ShortX：${documentInfo.title}`, text: documentInfo.canonical });
+    showNotice(`已打开系统分享面板，请选择 ShortX 导入这份${kindLabel(documentInfo.kind)}。`, "info");
+    return;
+  }
+  await copyText(documentInfo.canonical);
+  downloadText(documentInfo.filename, documentInfo.canonical);
+  showNotice(`当前浏览器不支持直接分享文件，已复制并下载官方格式文件 ${documentInfo.filename}；请在 ShortX 中导入该文件。`, "warn");
+}
+
+function actionButton(text, handler, className = "") {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = className;
+  button.textContent = text;
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    try {
+      await handler();
+    } catch (error) {
+      if (error.name !== "AbortError") showNotice(`操作失败：${error.message}`, "error");
+    } finally {
+      button.disabled = false;
+    }
+  });
+  return button;
+}
+
+function appendShortXActions(target, documentInfo, messageLevel = false) {
+  if (!target || target.querySelector(".shortx-copy")) return;
+  const label = kindLabel(documentInfo.kind);
+  const copy = actionButton(`复制${label}`, () => copyText(documentInfo.canonical, `${label}已按 ShortX 官方格式复制。`), "shortx-copy");
+  const importButton = actionButton(`一键导入 ShortX`, () => importShortX(documentInfo), "shortx-import");
+  if (messageLevel) {
+    target.classList.add("message-actions");
+  }
+  target.append(copy, importButton);
+}
+
+async function decorateShortXMessage(messageElement, text) {
+  if (!messageElement || messageElement.dataset.shortxDecorated === "1" || !text.trim()) return;
+  messageElement.dataset.shortxDecorated = "1";
+  const blocks = [...messageElement.querySelectorAll(".code-block")];
+  for (const block of blocks) {
+    const code = block.querySelector("code");
+    if (!code) continue;
+    const result = await validateShortXText(code.textContent || "");
+    if (result.valid) {
+      appendShortXActions(block.querySelector(".code-toolbar"), result);
+      return;
+    }
+  }
+  const result = await validateShortXText(text);
+  if (result.valid) {
+    const actions = document.createElement("div");
+    actions.className = "message-actions";
+    appendShortXActions(actions, result, true);
+    messageElement.appendChild(actions);
+  }
+}
+
+function addMessage(role, text = "", validate = role === "assistant") {
   const element = document.createElement("article");
   element.className = `message ${role}`;
-  element.textContent = text;
+  const content = document.createElement("div");
+  content.className = "rich-content";
+  element.appendChild(content);
   $("chat").appendChild(element);
+  setMessageText(element, text, validate);
   $("chat").scrollTop = $("chat").scrollHeight;
   return element;
 }
@@ -508,11 +768,12 @@ async function sendMessage(event) {
   setBusy($("sendButton"), true, "生成中…");
   let userMessage = null;
   let assistantMessage = null;
+  let assistantText = "";
   let received = false;
   try {
     await ensureSession();
     userMessage = addMessage("user", message);
-    assistantMessage = addMessage("assistant", "正在生成…");
+    assistantMessage = addMessage("assistant", "正在生成…", false);
     const response = await api("/api/chat", {
       method: "POST",
       signal: state.controller.signal,
@@ -528,7 +789,7 @@ async function sendMessage(event) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
-    assistantMessage.textContent = "";
+    setMessageText(assistantMessage, "", false);
     while (true) {
       const result = await reader.read();
       buffer += decoder.decode(result.value || new Uint8Array(), { stream: !result.done });
@@ -541,7 +802,8 @@ async function sendMessage(event) {
         try { eventData = JSON.parse(data); } catch { continue; }
         if (eventData.type === "delta") {
           received = true;
-          assistantMessage.textContent += eventData.content || "";
+          assistantText += eventData.content || "";
+          setMessageText(assistantMessage, assistantText, false);
           $("chat").scrollTop = $("chat").scrollHeight;
         } else if (eventData.type === "error") {
           throw new Error(eventData.message || "模型服务返回错误");
@@ -552,15 +814,17 @@ async function sendMessage(event) {
       if (result.done) break;
     }
     if (!received) {
-      assistantMessage.textContent = "模型没有返回内容。";
+      setMessageText(assistantMessage, "模型没有返回内容。", false);
       showNotice("模型服务已响应，但没有返回文本。", "warn");
     } else {
+      setMessageText(assistantMessage, assistantText, true);
       showNotice("");
     }
     await refresh();
   } catch (error) {
     if (assistantMessage) {
-      assistantMessage.textContent = error.name === "AbortError" ? "已取消生成。" : `生成失败：${error.message}`;
+      const message = error.name === "AbortError" ? "已取消生成。" : `生成失败：${error.message}`;
+      setMessageText(assistantMessage, message, false);
       assistantMessage.classList.add("error-message");
     }
     if (error.name !== "AbortError") showNotice(`模型请求失败：${error.message}`, "error");

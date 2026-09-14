@@ -18,6 +18,7 @@ import (
 	"github.com/snowzlmbot/ai-web-engine/internal/device"
 	"github.com/snowzlmbot/ai-web-engine/internal/model"
 	"github.com/snowzlmbot/ai-web-engine/internal/session"
+	"github.com/snowzlmbot/ai-web-engine/internal/shortx"
 	"github.com/snowzlmbot/ai-web-engine/internal/skills"
 	"github.com/snowzlmbot/ai-web-engine/web"
 )
@@ -137,6 +138,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/skills", s.skillsHandler)
 	mux.HandleFunc("/api/skills/reload", s.reloadSkills)
 	mux.HandleFunc("/api/chat", s.chat)
+	mux.HandleFunc("/api/shortx/validate", s.validateShortX)
 	return mux
 }
 
@@ -162,6 +164,29 @@ func (s *Server) ui(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(data)
+}
+
+func (s *Server) validateShortX(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var request struct {
+		Text string `json:"text"`
+	}
+	if err := decodeJSON(r, &request); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	doc, err := shortx.Parse(request.Text)
+	if err != nil {
+		s.writeJSON(w, http.StatusOK, map[string]any{"valid": false, "error": err.Error()})
+		return
+	}
+	s.writeJSON(w, http.StatusOK, map[string]any{
+		"valid": true, "kind": doc.Kind, "id": doc.ID, "title": doc.Title,
+		"canonical": doc.Canonical, "filename": doc.ID + ".txt",
+	})
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {

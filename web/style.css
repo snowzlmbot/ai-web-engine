@@ -157,6 +157,27 @@ button:not(.primary):hover:not(:disabled) { background: #203250; border-color: #
   padding: 14px 16px;
   border-radius: 12px;
 }
+.rich-content { min-width: 0; overflow-wrap: anywhere; }
+.rich-content p { margin: 0 0 10px; white-space: pre-wrap; }
+.rich-content p:last-child { margin-bottom: 0; }
+.rich-content h1, .rich-content h2, .rich-content h3, .rich-content h4, .rich-content h5, .rich-content h6 { margin: 0 0 10px; color: #f4f8ff; line-height: 1.3; }
+.rich-content h1 { font-size: 20px; }
+.rich-content h2 { font-size: 18px; }
+.rich-content h3 { font-size: 16px; }
+.rich-content ul, .rich-content ol { margin: 0 0 10px; padding-left: 22px; }
+.rich-content li { margin: 4px 0; }
+.rich-content a { color: var(--accent); }
+.rich-content code:not(pre code) { padding: 2px 5px; border-radius: 4px; background: #07101e; color: #f0abfc; font-size: .92em; }
+.rich-spacer { height: 7px; }
+.code-block { margin: 12px 0; overflow: hidden; border: 1px solid #304564; border-radius: 9px; background: #081221; }
+.code-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 35px; padding: 5px 8px 5px 11px; border-bottom: 1px solid #253a59; background: #101d31; }
+.code-language { color: #8fa6c8; font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-transform: lowercase; }
+.code-toolbar button, .message-actions button { padding: 6px 9px; font-size: 11px; }
+.code-toolbar button + button, .message-actions button + button { margin-left: 5px; }
+.code-block pre { max-height: min(58vh, 620px); margin: 0; overflow: auto; padding: 13px; color: #e5efff; font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre; tab-size: 2; }
+.code-block pre code { font: inherit; color: inherit; }
+.message-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(80, 112, 150, .38); }
+.message-actions button { margin: 0; }
 .message.user { justify-self: end; background: #1d4d55; }
 .message.assistant { justify-self: start; background: var(--panel); border: 1px solid var(--line); }
 .message.error-message { border-color: var(--danger); color: #fecdd3; }
@@ -224,6 +245,11 @@ dialog::backdrop { background: #030712cc; }
   #composer { padding: 12px; flex-direction: column; }
   #composer .primary { align-self: stretch; }
   .message { max-width: 96%; }
+  .code-block pre { max-height: 52vh; padding: 11px; font-size: 11px; }
+  .code-toolbar { align-items: flex-start; flex-wrap: wrap; }
+  .code-toolbar button { margin-left: auto; }
+  .message-actions { justify-content: stretch; }
+  .message-actions button { flex: 1 1 42%; }
   .overlay-panel { padding: 10px; }
   .panel-shell { padding: 17px 14px; }
   .provider-layout { grid-template-columns: 1fr; gap: 18px; }

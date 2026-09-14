@@ -13,6 +13,8 @@
 - 移动端会话抽屉支持新建、恢复、删除历史会话；
 - 只读设备能力接口提供 ABI、Root、SELinux、命令、路径和 DNS 能力，作为 ShortX 指令生成上下文；
 - API Key 不出现在 GET 配置响应、日志和会话文件中；
+- 支持富文本回复、Markdown 代码块、代码块内符号原样显示，以及通过本地官方格式校验后的快捷复制和一键导入 ShortX；
+- ShortX 输出区分一键指令 `DirectAction` 与自动指令 `Rule`，仅允许官方 UTF-8 导入结构通过复制/导入；
 - 项目采用专有许可证，默认保留全部权利，不允许未经书面授权的二次开发、复制、修改、衍生、分发、再许可、销售、托管或商用；
 - Android `/system/bin/sh` 兼容的云端 `init.sh`、`start.sh`、`stop.sh`，更新采用 `.new` 原子替换并保留用户数据。
 
@@ -53,7 +55,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
 ```
 
 
-发布流程会创建 `v1.1.8` Release，并提供以下独立资产：
+发布流程会创建 `v1.2.0` Release，并提供以下独立资产：
 
 - `ai-web-engine-android-arm64`：Android `arm64-v8a`，ELF64/AArch64；
 - `ai-web-engine-android-armv7`：Android `armeabi-v7a`，ELF32/ARM EABI5；
@@ -90,6 +92,7 @@ sh scripts/start.sh
 - `GET/POST /api/sessions`
 - `GET/PATCH/DELETE /api/sessions/{id}`
 - `POST /api/chat`：SSE
+- `POST /api/shortx/validate`：校验并规范化 DirectAction/Rule 官方导入文本
 - `GET /api/device-capabilities`：只读 Android 设备技术能力
 - `GET /api/skills`
 - `POST /api/skills/reload`
@@ -99,6 +102,8 @@ sh scripts/start.sh
 多 provider 配置写入 `config/model_config.json` 的非敏感注册表；每个 provider 的真实 Key 写入对应的 `config/providers/<provider-id>.key`，文件权限为 `600`。网页不会回显 Key，留空编辑 Key 会保留原文件；删除 provider 会同步删除对应 Key 文件。
 
 会话持久化 `providerId`、`modelId` 和 `reasoningLevel`。请求会严格按会话 provider 读取对应 Key，不按名称猜测，也不会把其他 provider 的 Key 作为 fallback。
+
+ShortX 官方指令分为两类：一键指令 `DirectAction` 使用尾部 `{"type":"da"}`；自动指令 `Rule` 使用尾部 `{"type":"rule"}`。两者都必须是主体 JSON、单独一行 `###------###`、尾部类型 JSON 的 UTF-8 文件。页面只从代码块内部提取载荷，复制/导入前会去除 Markdown 围栏并重新规范化；Android 支持 Web Share 时会以 `.txt` 文件打开系统分享面板供 ShortX 导入，不支持时会同时复制并下载规范文件。
 
 旧单 provider 配置仍兼容 `model.key` 和 `AI_WEB_ENGINE_API_KEY`；ShortX 启动动作保留环境变量注入，主要用于旧配置迁移和兼容场景，不会覆盖多 provider 的本地 Key 文件。
 
