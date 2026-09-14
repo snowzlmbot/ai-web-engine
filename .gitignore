@@ -10,3 +10,8 @@ coverage/
 .env
 .env.*
 graphify-out/
+
+# Local-only continuity and project state; never publish these files.
+PROJECT_STATE.json
+PROJECT_STATUS.md
+.project-continuity/

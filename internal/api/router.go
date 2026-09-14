@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -17,6 +18,7 @@ import (
 	"github.com/snowzlmbot/ai-web-engine/internal/buildinfo"
 	"github.com/snowzlmbot/ai-web-engine/internal/config"
 	"github.com/snowzlmbot/ai-web-engine/internal/device"
+	"github.com/snowzlmbot/ai-web-engine/internal/generation"
 	"github.com/snowzlmbot/ai-web-engine/internal/model"
 	"github.com/snowzlmbot/ai-web-engine/internal/session"
 	"github.com/snowzlmbot/ai-web-engine/internal/shortx"
@@ -26,23 +28,139 @@ import (
 
 var messageSequence atomic.Uint64
 
+type chatRequest struct {
+	SessionID        string `json:"sessionId"`
+	Message          string `json:"message"`
+	ProviderID       string `json:"providerId"`
+	ModelID          string `json:"modelId"`
+	ReasoningLevel   string `json:"reasoningLevel"`
+	ReasoningDisplay string `json:"reasoningDisplay"`
+}
+
+func (s *Server) prepareChat(req chatRequest) (session.Session, config.Config, string, string, []session.Message, error) {
+	if strings.TrimSpace(req.SessionID) == "" || strings.TrimSpace(req.Message) == "" {
+		return session.Session{}, config.Config{}, "", "", nil, errors.New("sessionId and message are required")
+	}
+	item, err := s.store.Get(req.SessionID)
+	if err != nil {
+		return session.Session{}, config.Config{}, "", "", nil, fmt.Errorf("session not found: %w", err)
+	}
+	providerID := req.ProviderID
+	if providerID == "" {
+		providerID = item.ProviderID
+	}
+	s.cfgMu.RLock()
+	activeCfg := s.cfg
+	s.cfgMu.RUnlock()
+	if providerID == "" {
+		providerID = activeCfg.ActiveProviderID
+	}
+	if _, metadataErr := s.providerMetadataConfig(providerID); metadataErr != nil && req.ProviderID == "" {
+		providerID = activeCfg.ActiveProviderID
+	}
+	cfg, err := s.currentProviderConfig(providerID)
+	if err != nil {
+		return session.Session{}, config.Config{}, "", "", nil, err
+	}
+	modelID, err := config.SelectModel(cfg, req.ModelID)
+	if req.ModelID == "" && item.ModelID != "" {
+		if selected, itemErr := config.SelectModel(cfg, item.ModelID); itemErr == nil {
+			modelID = selected
+		}
+	}
+	if err != nil {
+		return session.Session{}, config.Config{}, "", "", nil, err
+	}
+	if req.ReasoningLevel == "" {
+		req.ReasoningLevel = item.ReasoningLevel
+	}
+	if req.ReasoningLevel == "" {
+		req.ReasoningLevel = cfg.ReasoningLevel
+	}
+	if req.ReasoningLevel == "" {
+		req.ReasoningLevel = config.DefaultReasoningLevel
+	}
+	if !config.ValidReasoningLevel(req.ReasoningLevel) {
+		return session.Session{}, config.Config{}, "", "", nil, errors.New("invalid reasoningLevel")
+	}
+	if req.ReasoningDisplay == "" {
+		req.ReasoningDisplay = item.ReasoningDisplay
+	}
+	if req.ReasoningDisplay == "" {
+		req.ReasoningDisplay = session.ReasoningDisplayPartial
+	}
+	if !session.ValidReasoningDisplay(req.ReasoningDisplay) {
+		return session.Session{}, config.Config{}, "", "", nil, errors.New("invalid reasoningDisplay")
+	}
+
+	item.ProviderID = providerID
+	item.ModelID = modelID
+	item.ReasoningLevel = req.ReasoningLevel
+	item.ReasoningDisplay = req.ReasoningDisplay
+	messageID := fmt.Sprintf("msg-%d-%d", time.Now().UnixNano(), messageSequence.Add(1))
+	item.Messages = append(item.Messages, session.Message{ID: messageID + "-user", Role: "user", Content: req.Message})
+	if err := s.store.Save(item); err != nil {
+		return session.Session{}, config.Config{}, "", "", nil, fmt.Errorf("save user message: %w", err)
+	}
+
+	if err := s.refreshSkillsSnapshot(); err != nil {
+		return session.Session{}, config.Config{}, "", "", nil, err
+	}
+	s.skillMu.RLock()
+	system := s.skillText
+	local := skills.SelectLocal(s.localSkillList, req.Message, 3)
+	s.skillMu.RUnlock()
+	if prompt := skills.BuildSelectedPrompt(local); prompt != "" {
+		system += "\n\n" + prompt
+	}
+	if capabilityPrompt := device.Collect().Prompt(); capabilityPrompt != "" {
+		system += "\n\n" + capabilityPrompt
+	}
+	return item, cfg, modelID, system, append([]session.Message(nil), item.Messages...), nil
+}
+
+func (s *Server) refreshSkillsSnapshot() error {
+	list, text, err := skills.Load(s.skillRoot)
+	if err != nil {
+		return err
+	}
+	localList, err := skills.LoadOptional(s.localSkillsRoot)
+	if err != nil {
+		return err
+	}
+	s.skillMu.Lock()
+	s.skillList, s.localSkillList, s.skillText = list, localList, text
+	s.skillMu.Unlock()
+	return nil
+}
+
 type Server struct {
-	cfgPath    string
-	cfgMu      sync.RWMutex
-	cfg        config.Config
-	store      *session.Store
-	client     *model.Client
-	skillRoot  string
-	skillMu    sync.RWMutex
-	skillList  []skills.Skill
-	skillText  string
-	logger     *log.Logger
-	restartFn  func()
-	keyMu      sync.RWMutex
-	instanceID string
+	cfgPath         string
+	cfgMu           sync.RWMutex
+	cfg             config.Config
+	store           *session.Store
+	client          *model.Client
+	skillRoot       string
+	localSkillsRoot string
+	skillMu         sync.RWMutex
+	skillList       []skills.Skill
+	localSkillList  []skills.Skill
+	skillText       string
+	logger          *log.Logger
+	restartFn       func()
+	keyMu           sync.RWMutex
+	instanceID      string
+	generations     *generation.Manager
+	generationMu    sync.Mutex
+	sessionMu       sync.Mutex
+	sessionLocks    map[string]*sync.Mutex
 }
 
 func New(cfgPath, skillRoot string, cfg config.Config, store *session.Store, logger *log.Logger) (*Server, error) {
+	return NewWithLocalSkills(cfgPath, skillRoot, filepath.Join(filepath.Dir(skillRoot), "This machine skills"), cfg, store, logger)
+}
+
+func NewWithLocalSkills(cfgPath, skillRoot, localSkillsRoot string, cfg config.Config, store *session.Store, logger *log.Logger) (*Server, error) {
 	list, text, err := skills.Load(skillRoot)
 	if err != nil {
 		return nil, err
@@ -60,10 +178,17 @@ func New(cfgPath, skillRoot string, cfg config.Config, store *session.Store, log
 	if !found {
 		return nil, errors.New("shortx-rule-creator/SKILL.md was not loaded")
 	}
+	localRoot := localSkillsRoot
+	localList, localErr := skills.LoadOptional(localRoot)
+	if localErr != nil {
+		return nil, localErr
+	}
 	return &Server{
 		cfgPath: cfgPath, cfg: cfg, store: store, client: model.NewClient(),
-		skillRoot: skillRoot, skillList: list, skillText: text, logger: logger,
-		instanceID: fmt.Sprintf("%d-%d", time.Now().UnixNano(), os.Getpid()),
+		skillRoot: skillRoot, localSkillsRoot: localRoot, skillList: list, localSkillList: localList, skillText: text, logger: logger,
+		instanceID:   fmt.Sprintf("%d-%d", time.Now().UnixNano(), os.Getpid()),
+		generations:  generation.NewManager(),
+		sessionLocks: make(map[string]*sync.Mutex),
 	}, nil
 }
 
@@ -141,7 +266,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/skills", s.skillsHandler)
 	mux.HandleFunc("/api/skills/reload", s.reloadSkills)
 	mux.HandleFunc("/api/chat", s.chat)
+	mux.HandleFunc("/api/generations", s.generationsHandler)
+	mux.HandleFunc("/api/generations/", s.generationByIDHandler)
 	mux.HandleFunc("/api/shortx/validate", s.validateShortX)
+	mux.HandleFunc("/api/shortx/index-sources", s.shortXIndexSources)
 	return mux
 }
 
@@ -629,9 +757,12 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 func (s *Server) skillsHandler(w http.ResponseWriter, _ *http.Request) {
 	s.skillMu.RLock()
 	defer s.skillMu.RUnlock()
-	out := make([]map[string]string, 0, len(s.skillList))
+	out := make([]map[string]any, 0, len(s.skillList)+len(s.localSkillList))
 	for _, item := range s.skillList {
-		out = append(out, map[string]string{"name": item.Name, "path": item.Path})
+		out = append(out, map[string]any{"name": item.Name, "path": item.Path, "source": "official", "optional": false})
+	}
+	for _, item := range s.localSkillList {
+		out = append(out, map[string]any{"name": item.Name, "path": item.Path, "source": "local", "optional": true})
 	}
 	s.writeJSON(w, http.StatusOK, out)
 }
@@ -646,11 +777,171 @@ func (s *Server) reloadSkills(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	localList, localErr := skills.LoadOptional(s.localSkillsRoot)
+	if localErr != nil {
+		http.Error(w, localErr.Error(), http.StatusInternalServerError)
+		return
+	}
 	s.skillMu.Lock()
-	s.skillList, s.skillText = list, text
+	s.skillList, s.localSkillList, s.skillText = list, localList, text
 	s.skillMu.Unlock()
-	s.logger.Printf("skills reloaded count=%d", len(list))
-	s.writeJSON(w, http.StatusOK, map[string]any{"ok": true, "count": len(list)})
+	s.logger.Printf("skills reloaded official=%d local=%d", len(list), len(localList))
+	s.writeJSON(w, http.StatusOK, map[string]any{"ok": true, "officialCount": len(list), "localCount": len(localList)})
+}
+
+func (s *Server) sessionLock(id string) *sync.Mutex {
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
+	lock := s.sessionLocks[id]
+	if lock == nil {
+		lock = &sync.Mutex{}
+		s.sessionLocks[id] = lock
+	}
+	return lock
+}
+
+func (s *Server) generationsHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		sessionID := strings.TrimSpace(r.URL.Query().Get("sessionId"))
+		if sessionID == "" {
+			http.Error(w, "sessionId is required", http.StatusBadRequest)
+			return
+		}
+		task, ok := s.generations.ActiveForSession(sessionID)
+		if !ok {
+			s.writeJSON(w, http.StatusOK, map[string]any{"active": false})
+			return
+		}
+		s.writeJSON(w, http.StatusOK, map[string]any{"active": true, "task": task.View()})
+	case http.MethodPost:
+		var req chatRequest
+		if err := decodeJSON(r, &req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		lock := s.sessionLock(req.SessionID)
+		lock.Lock()
+		defer lock.Unlock()
+		if _, ok := s.generations.ActiveForSession(req.SessionID); ok {
+			http.Error(w, "a generation is already active for this session", http.StatusConflict)
+			return
+		}
+		item, cfg, modelID, system, messages, err := s.prepareChat(req)
+		if err != nil {
+			if strings.Contains(err.Error(), "session not found") {
+				http.Error(w, err.Error(), http.StatusNotFound)
+			} else {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+			}
+			return
+		}
+		messageID := item.Messages[len(item.Messages)-1].ID
+		messageID = strings.TrimSuffix(messageID, "-user")
+		draftID := messageID + "-draft"
+		taskID := fmt.Sprintf("task-%d-%d", time.Now().UnixNano(), messageSequence.Add(1))
+		task := generation.NewTask(taskID, item.ID, messageID, draftID)
+		s.generations.Add(task)
+		task.Publish(generation.Event{Type: "started"})
+		go s.runGeneration(task, item, cfg, modelID, system, messages)
+		s.writeJSON(w, http.StatusAccepted, map[string]any{
+			"taskId": taskID, "sessionId": item.ID, "messageId": messageID, "draftId": draftID,
+		})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) runGeneration(task *generation.Task, item session.Session, cfg config.Config, modelID, system string, messages []session.Message) {
+	lock := s.sessionLock(task.SessionID)
+	lock.Lock()
+	defer lock.Unlock()
+	var assistant strings.Builder
+	err := s.client.Stream(cfg, modelID, item.ReasoningLevel, system, messages, func(delta model.Delta) error {
+		if delta.Reasoning != "" && item.ReasoningDisplay != session.ReasoningDisplayOff {
+			content := delta.Reasoning
+			if item.ReasoningDisplay == session.ReasoningDisplayPartial {
+				used := 0
+				for _, previous := range func() []generation.Event { events, _ := task.Snapshot(); return events }() {
+					if previous.Type == "reasoning" {
+						used += len([]rune(previous.Content))
+					}
+				}
+				remaining := 4000 - used
+				if remaining <= 0 {
+					content = ""
+				} else if runes := []rune(content); len(runes) > remaining {
+					content = string(runes[:remaining])
+				}
+			}
+			if content != "" {
+				task.Publish(generation.Event{Type: "reasoning", Content: content})
+			}
+		}
+		if delta.Content != "" {
+			assistant.WriteString(delta.Content)
+			task.Publish(generation.Event{Type: "delta", Content: delta.Content})
+		}
+		return nil
+	})
+	if err != nil {
+		s.logger.Printf("generation task %s error: %v", task.ID, err)
+		task.Publish(generation.Event{Type: "error", Message: friendlyProviderError(err)})
+		return
+	}
+	item.Messages = append(item.Messages, session.Message{ID: task.MessageID, Role: "assistant", Content: assistant.String()})
+	if saveErr := s.store.Save(item); saveErr != nil {
+		s.logger.Printf("generation task %s session save error: %v", task.ID, saveErr)
+		task.Publish(generation.Event{Type: "error", Message: "session save failed"})
+		return
+	}
+	task.Publish(generation.Event{Type: "done", Done: true})
+}
+
+func (s *Server) generationByIDHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/api/generations/")
+	id = strings.TrimSuffix(id, "/events")
+	id = strings.Trim(id, "/")
+	if id == "" {
+		http.Error(w, "task id is required", http.StatusBadRequest)
+		return
+	}
+	task, err := s.generations.Get(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+	for event := range task.Subscribe(r.Context()) {
+		sse(w, event)
+		flusher.Flush()
+		if event.Done || event.Type == "error" {
+			return
+		}
+	}
+}
+
+func (s *Server) shortXIndexSources(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	s.writeJSON(w, http.StatusOK, map[string]string{
+		"officialPage": shortx.OfficialIndexURL,
+		"rawIndex":     shortx.SnowIndexURL,
+	})
 }
 
 func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
@@ -672,6 +963,13 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.TrimSpace(req.SessionID) == "" || strings.TrimSpace(req.Message) == "" {
 		http.Error(w, "sessionId and message are required", http.StatusBadRequest)
+		return
+	}
+	lock := s.sessionLock(req.SessionID)
+	lock.Lock()
+	defer lock.Unlock()
+	if _, active := s.generations.ActiveForSession(req.SessionID); active {
+		http.Error(w, "a generation is already active for this session", http.StatusConflict)
 		return
 	}
 	item, err := s.store.Get(req.SessionID)
@@ -744,9 +1042,21 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 	userID := messageID + "-user"
 	item.Messages = append(item.Messages, session.Message{ID: userID, Role: "user", Content: req.Message})
 	messages := append([]session.Message(nil), item.Messages...)
+	if err := s.store.Save(item); err != nil {
+		http.Error(w, "failed to save user message", http.StatusInternalServerError)
+		return
+	}
+	if err := s.refreshSkillsSnapshot(); err != nil {
+		http.Error(w, "failed to load skills", http.StatusInternalServerError)
+		return
+	}
 	s.skillMu.RLock()
 	system := s.skillText
+	local := skills.SelectLocal(s.localSkillList, req.Message, 3)
 	s.skillMu.RUnlock()
+	if prompt := skills.BuildSelectedPrompt(local); prompt != "" {
+		system += "\n\n" + prompt
+	}
 	if capabilityPrompt := device.Collect().Prompt(); capabilityPrompt != "" {
 		system += "\n\n" + capabilityPrompt
 	}
@@ -794,7 +1104,10 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		s.logger.Printf("chat error: %v", err)
-		sse(w, map[string]any{"type": "error", "message": err.Error()})
+		if saveErr := s.store.Save(item); saveErr != nil {
+			s.logger.Printf("failed to persist failed chat context: %v", saveErr)
+		}
+		sse(w, map[string]any{"type": "error", "messageId": messageID, "draftId": draftID, "message": friendlyProviderError(err)})
 		flusher.Flush()
 		return
 	}
@@ -808,6 +1121,16 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 	}
 	sse(w, map[string]any{"type": "done", "sessionId": item.ID, "messageId": messageID, "draftId": draftID})
 	flusher.Flush()
+}
+
+func friendlyProviderError(err error) string {
+	if errors.Is(err, model.ErrInsufficientBalance) {
+		return "当前模型服务商账户余额不足，请充值或切换到其他 provider；无需重启引擎。"
+	}
+	if errors.Is(err, model.ErrInputTokenFloor) {
+		return "当前 Key 要求请求输入至少 10000 token。请切换支持短上下文的 provider，或配置该 provider 的兼容上下文策略；无需重启引擎。"
+	}
+	return err.Error()
 }
 
 func (s *Server) configured() bool {

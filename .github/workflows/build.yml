@@ -20,6 +20,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.22'
+      - name: Reject local-only project state
+        run: |
+          set -eu
+          ! git ls-files --error-unmatch PROJECT_STATE.json >/dev/null 2>&1
+          ! git ls-files --error-unmatch PROJECT_STATUS.md >/dev/null 2>&1
+          ! git ls-files '.project-continuity/**' | grep -q .
       - name: Test and vet
         run: |
           go test ./...
@@ -98,18 +104,45 @@ jobs:
             dist/ai-web-engine-android-armv7
             dist/ai-web-engine-android-x86_64
             dist/ai-web-engine-android-x86
+            dist/manifest-android.json
+            dist/SHA256SUMS
             ai-web-engine-android-all.zip
           generate_release_notes: true
-      - name: Remove previous releases after successful current release
+      - name: Retain only the newest two releases after successful current release
         if: success() && startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
           CURRENT_TAG: ${{ github.ref_name }}
         run: |
           set -eu
+          releases=$(mktemp)
+          trap 'rm -f "$releases"' EXIT
           gh release list --limit 100 --json tagName,isDraft --jq '.[] | select(.isDraft == false) | .tagName' |
-            while IFS= read -r tag; do
-              [ -n "$tag" ] || continue
-              [ "$tag" = "$CURRENT_TAG" ] && continue
-              gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
-            done
+            sort -V -r >"$releases"
+          keep=0
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            keep=$((keep + 1))
+            if [ "$keep" -le 2 ]; then
+              continue
+            fi
+            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+          done <"$releases"
+          test "$(gh release list --limit 100 --json tagName,isDraft --jq '[.[] | select(.isDraft == false)] | length')" -le 2
+
+  sync-changelog:
+    needs: package
+    if: success() && startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify changelog repository
+        env:
+          GH_TOKEN: ${{ secrets.CHANGELOG_REPO_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          test -n "$GH_TOKEN" || { echo 'CHANGELOG_REPO_TOKEN is required for changelog sync' >&2; exit 1; }
+          gh api --method POST repos/snowzlmbot/ai-web-engine-changelog/dispatches \
+            -f event_type=ai-web-engine-release \
+            -f "client_payload[tag_name]=$RELEASE_TAG" \
+            -f "client_payload[source_repo]=$GITHUB_REPOSITORY"

@@ -20,7 +20,8 @@ var version = buildinfo.Version
 func main() {
 	host := flag.String("host", "127.0.0.1", "bind host (loopback by default)")
 	port := flag.Int("port", 6688, "listen port")
-	skillsDir := flag.String("skills-dir", "skills", "skills root")
+	skillsDir := flag.String("skills-dir", "skills", "required official skills root")
+	localSkillsRoot := flag.String("local-skills-dir", filepath.Join(filepath.Dir(*skillsDir), "This machine skills"), "optional device-local skills root")
 	configPath := flag.String("config", filepath.Join("config", "model_config.json"), "model config path")
 	sessionsDir := flag.String("sessions-dir", "sessions", "encrypted sessions directory")
 	logDir := flag.String("log-dir", "logs", "log directory")
@@ -53,7 +54,7 @@ func main() {
 	if err != nil {
 		logger.Fatal(err)
 	}
-	server, err := api.New(*configPath, *skillsDir, cfg, store, logger)
+	server, err := api.NewWithLocalSkills(*configPath, *skillsDir, *localSkillsRoot, cfg, store, logger)
 	if err != nil {
 		logger.Fatal(err)
 	}

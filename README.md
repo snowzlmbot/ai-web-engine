@@ -9,6 +9,7 @@
 - 新建/列出/删除/恢复历史会话；
 - 会话使用 AES-256-GCM，`config/master.key` 与 `sessions/*.enc` 权限为 600；
 - 启动时递归读取 `skills/**/SKILL.md`，并把 `shortx-rule-creator` 约束放在 system 消息首位；
+- 可选读取 `/data/local/ai-instruction/This machine skills` 下的文件夹、`SKILL.md` 和 ZIP，启动/每次生成前重建索引，仅按需加载匹配扩展；
 - 模型设置页支持多组 provider 的新增、编辑、切换、删除；每个 provider 使用独立的 `config/providers/<provider-id>.key` 文件（权限 600），协议支持 OpenAI Chat、OpenAI Responses、Anthropic；
 - 移动端会话抽屉支持新建、恢复、删除历史会话；
 - 只读设备能力接口提供 ABI、Root、SELinux、命令、路径和 DNS 能力，作为 ShortX 指令生成上下文；
@@ -16,7 +17,9 @@
 - 支持富文本回复、Markdown 代码块、代码块内符号原样显示，以及通过本地官方格式校验后的快捷复制和一键导入 ShortX；
 - ShortX 输出区分一键指令 `DirectAction` 与自动指令 `Rule`，仅允许官方 UTF-8 导入结构通过复制/导入；
 - 项目采用专有许可证，默认保留全部权利，不允许未经书面授权的二次开发、复制、修改、衍生、分发、再许可、销售、托管或商用；
-- Android `/system/bin/sh` 兼容的云端 `init.sh`、`start.sh`、`stop.sh`，更新采用 `.new` 原子替换并保留用户数据。
+- Android `/system/bin/sh` 兼容的云端 `init.sh`、`start.sh`、`stop.sh`，更新采用 `.new` 原子替换并保留用户数据；
+- `scripts/rollback.sh`：只允许从当前最新正式 Release 回退到上一个正式 Release，并按 ABI、ELF、SHA-256 和健康检查验证；
+- `CHANGELOG.md`：源项目版本日志，独立日志站点会从正式 tag 自动生成；
 
 ## 目录结构
 
@@ -91,7 +94,11 @@ sh scripts/start.sh
 - `GET /api/models`
 - `GET/POST /api/sessions`
 - `GET/PATCH/DELETE /api/sessions/{id}`
-- `POST /api/chat`：SSE
+- `POST /api/generations`：创建不绑定浏览器连接的生成任务；
+- `GET /api/generations?sessionId=...`：查询会话中的活动任务；
+- `GET /api/generations/{taskId}/events`：重放/订阅 reasoning、delta、done、error 事件；
+- `GET /api/shortx/index-sources`：返回官方说明页与 snow Raw 索引地址；
+- `POST /api/chat`：兼容旧客户端的直接 SSE；
 - `POST /api/shortx/validate`：校验并规范化 DirectAction/Rule 官方导入文本
 - `GET /api/device-capabilities`：只读 Android 设备技术能力
 - `GET /api/skills`

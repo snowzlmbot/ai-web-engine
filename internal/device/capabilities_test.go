@@ -41,3 +41,20 @@ func TestCollectIsReadOnlyAndListsSupportedABIs(t *testing.T) {
 		t.Fatal("capability prompt contains a test secret")
 	}
 }
+
+func TestCollectApplicationsArePackageNamesOnlyAndBounded(t *testing.T) {
+	capabilities := Collect()
+	if len(capabilities.Applications) > 512 {
+		t.Fatalf("application list exceeds safety limit: %d", len(capabilities.Applications))
+	}
+	for _, application := range capabilities.Applications {
+		if !validPackageName(application.Package) {
+			t.Fatalf("invalid application package: %q", application.Package)
+		}
+	}
+	for _, required := range []string{"rootUID", "procReadable", "sysReadable", "packageListRead"} {
+		if _, ok := capabilities.RootCapabilities[required]; !ok {
+			t.Fatalf("root capability %q missing", required)
+		}
+	}
+}

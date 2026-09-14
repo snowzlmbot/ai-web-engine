@@ -10,6 +10,7 @@ const state = {
   providers: [],
   activeProviderId: "",
   editingProviderId: "",
+  activeTaskId: "",
 };
 
 function showNotice(message, kind = "info") {
@@ -787,6 +788,150 @@ async function openDeviceCapabilities() {
   }
 }
 
+async function consumeGeneration(task, { assistantMessage = null, reasoningMessage = null, resume = false } = {}) {
+  state.activeTaskId = task.id || task.taskId || "";
+  let assistantText = "";
+  let reasoningText = "";
+  let received = false;
+  const messageId = task.messageId || task.task?.messageId || "";
+  const draftId = task.draftId || task.task?.draftId || "";
+  if (!assistantMessage) assistantMessage = addMessage("assistant", "正在生成…", false, messageId);
+  if (messageId) assistantMessage.dataset.messageId = messageId;
+
+  const applyEvent = (eventData) => {
+    if (eventData.type === "reasoning") {
+      reasoningText += eventData.content || "";
+      if (!reasoningMessage) reasoningMessage = addMessage("reasoning", "", false, eventData.draftId || draftId);
+      setMessageText(reasoningMessage, reasoningText, false);
+    } else if (eventData.type === "delta") {
+      received = true;
+      assistantText += eventData.content || "";
+      setMessageText(assistantMessage, assistantText, false);
+    } else if (eventData.type === "error") {
+      const error = new Error(eventData.message || "模型服务返回错误");
+      error.generationEvent = eventData;
+      throw error;
+    } else if (eventData.type === "done") {
+      if (eventData.sessionId) state.sessionId = eventData.sessionId;
+      state.activeTaskId = "";
+    }
+    $("chat").scrollTop = $("chat").scrollHeight;
+  };
+
+  const response = await fetch(`/api/generations/${encodeURIComponent(state.activeTaskId)}/events`, {
+    cache: "no-store",
+    headers: { Accept: "text/event-stream" },
+    signal: state.controller?.signal,
+  });
+  if (!response.ok) throw new Error((await response.text()).trim() || `任务订阅失败（HTTP ${response.status}）`);
+  if (!response.body) throw new Error("浏览器不支持流式响应");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finished = false;
+  try {
+    while (!finished) {
+      const result = await reader.read();
+      buffer += decoder.decode(result.value || new Uint8Array(), { stream: !result.done });
+      const events = buffer.split("\n\n");
+      buffer = events.pop() || "";
+      for (const eventText of events) {
+        const data = eventText.split("\n").filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim()).join("\n");
+        if (!data) continue;
+        let eventData;
+        try { eventData = JSON.parse(data); } catch { continue; }
+        applyEvent(eventData);
+        if (eventData.type === "done" || eventData.type === "error") finished = true;
+      }
+      if (result.done) break;
+    }
+    if (!finished && buffer.trim()) {
+      const data = buffer.split("\n").filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim()).join("\n");
+      if (data) applyEvent(JSON.parse(data));
+    }
+    if (!received && !assistantMessage.classList.contains("error-message")) {
+      setMessageText(assistantMessage, "模型没有返回内容。", false);
+      showNotice("模型服务已响应，但没有返回文本。", "warn");
+    } else if (!assistantMessage.classList.contains("error-message")) {
+      setMessageText(assistantMessage, assistantText, true);
+      showNotice("");
+    }
+    if (task.sessionId) {
+      state.session = await api(`/api/sessions/${encodeURIComponent(task.sessionId)}`).then((result) => result.json());
+    }
+  } catch (error) {
+    if (assistantMessage) {
+      setMessageText(assistantMessage, error.name === "AbortError" ? "已取消生成。" : `生成失败：${error.message}`, false);
+      assistantMessage.classList.add("error-message");
+    }
+    if (error.name !== "AbortError") showNotice(`模型请求失败：${error.message}`, "error");
+    if (!resume) throw error;
+  } finally {
+    state.activeTaskId = "";
+  }
+}
+
+async function sendMessageResumable(event) {
+  event.preventDefault();
+  if (state.sending) return;
+  if (!state.configured) {
+    showNotice("请先在模型设置中保存服务商和本地 Key。", "warn");
+    showSettings(true);
+    return;
+  }
+  const message = $("message").value.trim();
+  if (!message || !$("model").value) return;
+  state.sending = true;
+  state.controller = new AbortController();
+  $("message").value = "";
+  setBusy($("sendButton"), true, "生成中…");
+  let userMessage = null;
+  try {
+    await ensureSession();
+    userMessage = addMessage("user", message);
+    const payload = await api("/api/generations", {
+      method: "POST",
+      signal: state.controller.signal,
+      body: JSON.stringify({
+        sessionId: state.sessionId,
+        providerId: selectedProviderId(),
+        message,
+        modelId: $("model").value,
+        reasoningLevel: $("reasoning").value || "xhigh",
+        reasoningDisplay: $("reasoningDisplay").value || "partial",
+      }),
+    }).then((response) => response.json());
+    await consumeGeneration(payload);
+    await refresh();
+  } catch (error) {
+    if (error.name !== "AbortError") showNotice(`模型请求失败：${error.message}`, "error");
+    if (userMessage) userMessage.scrollIntoView({ block: "nearest" });
+  } finally {
+    state.sending = false;
+    state.controller = null;
+    setBusy($("sendButton"), false);
+    setConfigured(state.configured);
+  }
+}
+
+async function resumeActiveGeneration() {
+  if (!state.sessionId || state.sending) return;
+  try {
+    const payload = await api(`/api/generations?sessionId=${encodeURIComponent(state.sessionId)}`).then((response) => response.json());
+    if (!payload.active || !payload.task) return;
+    state.sending = true;
+    setBusy($("sendButton"), true, "生成中…");
+    await consumeGeneration(payload.task, { resume: true });
+    await refresh();
+  } catch (error) {
+    showNotice(`恢复生成进度失败：${error.message}`, "error");
+  } finally {
+    state.sending = false;
+    setBusy($("sendButton"), false);
+    setConfigured(state.configured);
+  }
+}
+
 async function sendMessage(event) {
   event.preventDefault();
   if (state.sending) return;
@@ -908,7 +1053,7 @@ on("reasoning", "change", async () => {
 on("reasoningDisplay", "change", async () => {
   try { await patchSession({ reasoningDisplay: $("reasoningDisplay").value || "partial" }); } catch (error) { showNotice(`保存推理显示设置失败：${error.message}`, "error"); }
 });
-on("composer", "submit", sendMessage);
+on("composer", "submit", sendMessageResumable);
 
 clearChat("输入需求开始生成 ShortX 指令。");
-refresh().then(ensureSession).catch((error) => showNotice(`初始化会话失败：${error.message}`, "error"));
+refresh().then(async () => { await ensureSession(); await resumeActiveGeneration(); }).catch((error) => showNotice(`初始化会话失败：${error.message}`, "error"));
