@@ -16,6 +16,7 @@ import (
 	"github.com/snowzlmbot/ai-web-engine/internal/config"
 	"github.com/snowzlmbot/ai-web-engine/internal/model"
 	"github.com/snowzlmbot/ai-web-engine/internal/session"
+	"github.com/snowzlmbot/ai-web-engine/internal/shortx"
 )
 
 func newTestServer(t *testing.T, cfg config.Config) *Server {
@@ -78,6 +79,55 @@ func TestHealthAndUIExposeBuildVersionAndNoStore(t *testing.T) {
 	}
 	if !strings.Contains(uiRec.Body.String(), "buildVersion") {
 		t.Fatal("UI does not expose build version marker")
+	}
+}
+
+func TestValidateShortXEndpointReturnsCanonicalOfficialPayload(t *testing.T) {
+	handler := newTestHandler(t, config.Default())
+	input := "{\n  \"actions\": [],\n  \"id\": \"DA-TEST-GENERATE-001\",\n  \"title\": \"测试：一键生成指令\",\n  \"description\": \"保留 $HOME ${value}\\\\n 符号。\",\n  \"versionCode\": \"1\",\n  \"hook\": {},\n  \"quit\": {},\n  \"parameters\": []\n}\n###------###\n{\"type\":\"da\"}\n"
+	reqBody, err := json.Marshal(map[string]string{"text": input})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/shortx/validate", strings.NewReader(string(reqBody)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("validate status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var payload struct {
+		Valid     bool   `json:"valid"`
+		Kind      string `json:"kind"`
+		ID        string `json:"id"`
+		Canonical string `json:"canonical"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if !payload.Valid || payload.Kind != "da" || payload.ID != "DA-TEST-GENERATE-001" {
+		t.Fatalf("unexpected validation payload: %+v", payload)
+	}
+	if strings.Contains(payload.Canonical, "```") || !strings.Contains(payload.Canonical, shortx.Separator) || !strings.Contains(payload.Canonical, "$HOME") || !strings.Contains(payload.Canonical, "${value}") {
+		t.Fatalf("canonical payload lost official structure or symbols: %q", payload.Canonical)
+	}
+	parsedDoc, err := shortx.Parse(payload.Canonical)
+	if err != nil || parsedDoc.Kind != "da" {
+		t.Fatalf("canonical payload is not parseable as DirectAction: %v %+v", err, parsedDoc)
+	}
+
+	badReq := httptest.NewRequest(http.MethodPost, "/api/shortx/validate", strings.NewReader(`{"text":"{\\\"actions\\\":[]}###-----###{\\\"type\\\":\\\"da\\\"}"}`))
+	badReq.Header.Set("Content-Type", "application/json")
+	badRec := httptest.NewRecorder()
+	handler.ServeHTTP(badRec, badReq)
+	var bad struct {
+		Valid bool `json:"valid"`
+	}
+	if err := json.Unmarshal(badRec.Body.Bytes(), &bad); err != nil {
+		t.Fatal(err)
+	}
+	if bad.Valid {
+		t.Fatal("malformed ShortX payload was accepted")
 	}
 }
 
