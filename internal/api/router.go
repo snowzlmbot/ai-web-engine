@@ -11,6 +11,7 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/snowzlmbot/ai-web-engine/internal/buildinfo"
@@ -22,6 +23,8 @@ import (
 	"github.com/snowzlmbot/ai-web-engine/internal/skills"
 	"github.com/snowzlmbot/ai-web-engine/web"
 )
+
+var messageSequence atomic.Uint64
 
 type Server struct {
 	cfgPath    string
@@ -513,9 +516,10 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 			s.writeJSON(w, http.StatusOK, item)
 		case http.MethodPatch:
 			var settings struct {
-				ProviderID     string `json:"providerId"`
-				ModelID        string `json:"modelId"`
-				ReasoningLevel string `json:"reasoningLevel"`
+				ProviderID       string `json:"providerId"`
+				ModelID          string `json:"modelId"`
+				ReasoningLevel   string `json:"reasoningLevel"`
+				ReasoningDisplay string `json:"reasoningDisplay"`
 			}
 			if err := decodeJSON(r, &settings); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
@@ -567,6 +571,13 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 				item.ReasoningLevel = settings.ReasoningLevel
+			}
+			if settings.ReasoningDisplay != "" {
+				if !session.ValidReasoningDisplay(settings.ReasoningDisplay) {
+					http.Error(w, "invalid reasoningDisplay", http.StatusBadRequest)
+					return
+				}
+				item.ReasoningDisplay = settings.ReasoningDisplay
 			}
 			if err := s.store.Save(item); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -648,11 +659,12 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		SessionID      string `json:"sessionId"`
-		Message        string `json:"message"`
-		ProviderID     string `json:"providerId"`
-		ModelID        string `json:"modelId"`
-		ReasoningLevel string `json:"reasoningLevel"`
+		SessionID        string `json:"sessionId"`
+		Message          string `json:"message"`
+		ProviderID       string `json:"providerId"`
+		ModelID          string `json:"modelId"`
+		ReasoningLevel   string `json:"reasoningLevel"`
+		ReasoningDisplay string `json:"reasoningDisplay"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -712,11 +724,26 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid reasoningLevel", http.StatusBadRequest)
 		return
 	}
+	if req.ReasoningDisplay == "" {
+		req.ReasoningDisplay = item.ReasoningDisplay
+	}
+	if req.ReasoningDisplay == "" {
+		req.ReasoningDisplay = session.ReasoningDisplayPartial
+	}
+	if !session.ValidReasoningDisplay(req.ReasoningDisplay) {
+		http.Error(w, "invalid reasoningDisplay", http.StatusBadRequest)
+		return
+	}
 	item.ProviderID = providerID
 	item.ModelID = modelID
 	item.ReasoningLevel = req.ReasoningLevel
+	item.ReasoningDisplay = req.ReasoningDisplay
 
-	messages := append(append([]session.Message(nil), item.Messages...), session.Message{Role: "user", Content: req.Message})
+	messageID := fmt.Sprintf("msg-%d-%d", time.Now().UnixNano(), messageSequence.Add(1))
+	draftID := messageID + "-draft"
+	userID := messageID + "-user"
+	item.Messages = append(item.Messages, session.Message{ID: userID, Role: "user", Content: req.Message})
+	messages := append([]session.Message(nil), item.Messages...)
 	s.skillMu.RLock()
 	system := s.skillText
 	s.skillMu.RUnlock()
@@ -735,10 +762,32 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var assistant strings.Builder
+	reasoningShown := 0
 	err = s.client.Stream(cfg, modelID, req.ReasoningLevel, system, messages, func(delta model.Delta) error {
+		if delta.Reasoning != "" {
+			if req.ReasoningDisplay != session.ReasoningDisplayOff {
+				content := delta.Reasoning
+				if req.ReasoningDisplay == session.ReasoningDisplayPartial {
+					remaining := 4000 - reasoningShown
+					if remaining <= 0 {
+						content = ""
+					} else {
+						runes := []rune(content)
+						if len(runes) > remaining {
+							content = string(runes[:remaining])
+						}
+						reasoningShown += len([]rune(content))
+					}
+				}
+				if content != "" {
+					sse(w, map[string]any{"type": "reasoning", "messageId": draftID, "content": content})
+					flusher.Flush()
+				}
+			}
+		}
 		if delta.Content != "" {
 			assistant.WriteString(delta.Content)
-			sse(w, map[string]any{"type": "delta", "content": delta.Content})
+			sse(w, map[string]any{"type": "delta", "messageId": messageID, "content": delta.Content})
 			flusher.Flush()
 		}
 		return nil
@@ -750,14 +799,14 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	item.Messages = append(messages, session.Message{Role: "assistant", Content: assistant.String()})
+	item.Messages = append(messages, session.Message{ID: messageID, Role: "assistant", Content: assistant.String()})
 	if err := s.store.Save(item); err != nil {
 		s.logger.Printf("session save error: %v", err)
 		sse(w, map[string]any{"type": "error", "message": "session save failed"})
 		flusher.Flush()
 		return
 	}
-	sse(w, map[string]any{"type": "done", "sessionId": item.ID})
+	sse(w, map[string]any{"type": "done", "sessionId": item.ID, "messageId": messageID, "draftId": draftID})
 	flusher.Flush()
 }
 

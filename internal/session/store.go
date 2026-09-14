@@ -16,19 +16,31 @@ import (
 )
 
 type Message struct {
+	ID      string `json:"id,omitempty"`
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
 
 type Session struct {
-	ID             string    `json:"id"`
-	Title          string    `json:"title"`
-	CreatedAt      int64     `json:"createdAt"`
-	UpdatedAt      int64     `json:"updatedAt"`
-	ProviderID     string    `json:"providerId,omitempty"`
-	ModelID        string    `json:"modelId,omitempty"`
-	ReasoningLevel string    `json:"reasoningLevel,omitempty"`
-	Messages       []Message `json:"messages"`
+	ID               string    `json:"id"`
+	Title            string    `json:"title"`
+	CreatedAt        int64     `json:"createdAt"`
+	UpdatedAt        int64     `json:"updatedAt"`
+	ProviderID       string    `json:"providerId,omitempty"`
+	ModelID          string    `json:"modelId,omitempty"`
+	ReasoningLevel   string    `json:"reasoningLevel,omitempty"`
+	ReasoningDisplay string    `json:"reasoningDisplay,omitempty"`
+	Messages         []Message `json:"messages"`
+}
+
+const (
+	ReasoningDisplayOff     = "off"
+	ReasoningDisplayPartial = "partial"
+	ReasoningDisplayAll     = "all"
+)
+
+func ValidReasoningDisplay(value string) bool {
+	return value == ReasoningDisplayOff || value == ReasoningDisplayPartial || value == ReasoningDisplayAll
 }
 
 type Store struct {

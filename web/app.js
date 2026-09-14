@@ -180,6 +180,7 @@ function setMessageText(messageElement, value, validate = false) {
   renderRichText(messageElement, value);
   if (validate && messageElement.classList.contains("assistant")) {
     decorateShortXMessage(messageElement, messageElement.dataset.rawText).catch((error) => {
+      delete messageElement.dataset.shortxValidationText;
       showNotice(`ShortX 指令格式校验失败：${error.message}`, "error");
     });
   }
@@ -230,9 +231,12 @@ async function copyText(text, notice = "内容已复制。") {
     input.style.position = "fixed";
     input.style.opacity = "0";
     document.body.appendChild(input);
-    input.select();
-    if (!document.execCommand("copy")) throw new Error("浏览器拒绝访问剪贴板");
-    input.remove();
+    try {
+      input.select();
+      if (!document.execCommand("copy")) throw new Error("浏览器拒绝访问剪贴板");
+    } finally {
+      input.remove();
+    }
   }
   showNotice(notice, "info");
 }
@@ -249,11 +253,37 @@ function downloadText(filename, text) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-async function importShortX(documentInfo) {
-  if (typeof File !== "function") {
-    await copyText(documentInfo.canonical);
+const SHORTX_PACKAGE = "tornaco.apps.shortx";
+
+function isAndroidBrowser() {
+  return /Android/i.test(navigator.userAgent || "");
+}
+
+function fallbackImport(documentInfo) {
+  return copyText(documentInfo.canonical).then(() => {
     downloadText(documentInfo.filename, documentInfo.canonical);
-    showNotice(`当前浏览器不支持文件分享，已复制并下载官方格式文件 ${documentInfo.filename}。`, "warn");
+    showNotice(`未能直接唤起 ShortX，已复制并下载官方格式文件 ${documentInfo.filename}；请在 ShortX 中导入该 txt 文件。`, "warn");
+  });
+}
+
+async function importShortX(documentInfo) {
+  if (isAndroidBrowser()) {
+    const intent = `intent:#Intent;action=android.intent.action.SEND;type=text/plain;S.android.intent.extra.TEXT=${encodeURIComponent(documentInfo.canonical)};S.android.intent.extra.TITLE=${encodeURIComponent(documentInfo.filename)};package=${SHORTX_PACKAGE};end`;
+    let leftPage = false;
+    const onVisibility = () => { leftPage = document.visibilityState === "hidden"; };
+    document.addEventListener("visibilitychange", onVisibility, { once: false });
+    try {
+      window.location.href = intent;
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      if (leftPage || document.visibilityState === "hidden") return;
+    } finally {
+      document.removeEventListener("visibilitychange", onVisibility);
+    }
+    await fallbackImport(documentInfo);
+    return;
+  }
+  if (typeof File !== "function") {
+    await fallbackImport(documentInfo);
     return;
   }
   const file = new File([documentInfo.canonical], documentInfo.filename, { type: "text/plain;charset=utf-8" });
@@ -262,14 +292,7 @@ async function importShortX(documentInfo) {
     showNotice(`已打开系统分享面板，请选择 ShortX 导入这份${kindLabel(documentInfo.kind)}。`, "info");
     return;
   }
-  if (navigator.share) {
-    await navigator.share({ title: `导入 ShortX：${documentInfo.title}`, text: documentInfo.canonical });
-    showNotice(`已打开系统分享面板，请选择 ShortX 导入这份${kindLabel(documentInfo.kind)}。`, "info");
-    return;
-  }
-  await copyText(documentInfo.canonical);
-  downloadText(documentInfo.filename, documentInfo.canonical);
-  showNotice(`当前浏览器不支持直接分享文件，已复制并下载官方格式文件 ${documentInfo.filename}；请在 ShortX 中导入该文件。`, "warn");
+  await fallbackImport(documentInfo);
 }
 
 function actionButton(text, handler, className = "") {
@@ -302,30 +325,40 @@ function appendShortXActions(target, documentInfo, messageLevel = false) {
 }
 
 async function decorateShortXMessage(messageElement, text) {
-  if (!messageElement || messageElement.dataset.shortxDecorated === "1" || !text.trim()) return;
-  messageElement.dataset.shortxDecorated = "1";
+  if (!messageElement || !text.trim() || messageElement.dataset.shortxDecorated === "1") return;
+  if (messageElement.dataset.shortxValidationText === text) return;
+  messageElement.dataset.shortxValidationText = text;
   const blocks = [...messageElement.querySelectorAll(".code-block")];
+  let found = false;
   for (const block of blocks) {
     const code = block.querySelector("code");
     if (!code) continue;
     const result = await validateShortXText(code.textContent || "");
+    if (!messageElement.isConnected || messageElement.dataset.rawText !== text || messageElement.dataset.shortxValidationText !== text) return;
     if (result.valid) {
       appendShortXActions(block.querySelector(".code-toolbar"), result);
-      return;
+      found = true;
     }
   }
+  if (found) {
+    messageElement.dataset.shortxDecorated = "1";
+    return;
+  }
   const result = await validateShortXText(text);
+  if (!messageElement.isConnected || messageElement.dataset.rawText !== text || messageElement.dataset.shortxValidationText !== text) return;
   if (result.valid) {
     const actions = document.createElement("div");
     actions.className = "message-actions";
     appendShortXActions(actions, result, true);
     messageElement.appendChild(actions);
+    messageElement.dataset.shortxDecorated = "1";
   }
 }
 
-function addMessage(role, text = "", validate = role === "assistant") {
+function addMessage(role, text = "", validate = role === "assistant", messageId = "") {
   const element = document.createElement("article");
   element.className = `message ${role}`;
+  if (messageId) element.dataset.messageId = messageId;
   const content = document.createElement("div");
   content.className = "rich-content";
   element.appendChild(content);
@@ -518,6 +551,8 @@ function applySession(session) {
   renderModels(providerId, session?.modelId || "");
   const reasoning = session?.reasoningLevel || "xhigh";
   if ($("reasoning")) $("reasoning").value = reasoning;
+  const reasoningDisplay = session?.reasoningDisplay || "partial";
+  if ($("reasoningDisplay")) $("reasoningDisplay").value = reasoningDisplay;
 }
 
 async function patchSession(settings) {
@@ -535,7 +570,7 @@ async function openSession(id) {
     applySession(session);
     setSidebar(false);
     clearChat(session.messages?.length ? "" : "输入需求开始生成 ShortX 指令。");
-    (session.messages || []).forEach((message) => addMessage(message.role, message.content));
+    (session.messages || []).forEach((message) => addMessage(message.role, message.content, message.role === "assistant", message.id || ""));
     await refresh();
   } catch (error) {
     showNotice(`打开会话失败：${error.message}`, "error");
@@ -610,9 +645,10 @@ async function refresh({ openSettings = false } = {}) {
     renderModels(selectedProviderId(), state.session?.modelId || "");
     const sessions = await api("/api/sessions").then((response) => response.json());
     renderSessions(sessions);
+    const hasModelConfig = state.providers.some((provider) => providerModels(provider).length > 0);
     if (!ready || state.providers.length === 0) {
       showNotice("服务已启动，但还没有完整模型配置。请在“模型设置”中新增服务商并保存本地 Key。", "warn");
-      if (openSettings || state.providers.length === 0) showSettings(true);
+      if (!hasModelConfig) showSettings(true);
     } else {
       showNotice("");
       if (openSettings) showSettings(true);
@@ -670,7 +706,7 @@ async function selectSessionProvider() {
       method: "POST",
       body: JSON.stringify({ id: providerId }),
     });
-    await patchSession({ providerId, modelId: provider.defaultModelId || providerModels(provider)[0]?.id || "", reasoningLevel: $("reasoning").value || "xhigh" });
+    await patchSession({ providerId, modelId: provider.defaultModelId || providerModels(provider)[0]?.id || "", reasoningLevel: $("reasoning").value || "xhigh", reasoningDisplay: $("reasoningDisplay").value || "partial" });
     showNotice(`当前会话已切换到 ${provider.name || provider.id}。`, "info");
     setConfigured(Boolean(provider.keyConfigured));
     setHealth(provider.keyConfigured ? "已连接" : "需要配置", provider.keyConfigured ? "ok" : "warn");
@@ -768,7 +804,9 @@ async function sendMessage(event) {
   setBusy($("sendButton"), true, "生成中…");
   let userMessage = null;
   let assistantMessage = null;
+  let reasoningMessage = null;
   let assistantText = "";
+  let reasoningText = "";
   let received = false;
   try {
     await ensureSession();
@@ -783,6 +821,7 @@ async function sendMessage(event) {
         message,
         modelId: $("model").value,
         reasoningLevel: $("reasoning").value || "xhigh",
+        reasoningDisplay: $("reasoningDisplay").value || "partial",
       }),
     });
     if (!response.body) throw new Error("浏览器不支持流式响应");
@@ -800,7 +839,12 @@ async function sendMessage(event) {
         if (!data) continue;
         let eventData;
         try { eventData = JSON.parse(data); } catch { continue; }
-        if (eventData.type === "delta") {
+        if (eventData.type === "reasoning") {
+          reasoningText += eventData.content || "";
+          if (!reasoningMessage) reasoningMessage = addMessage("reasoning", "", false, eventData.messageId || "");
+          setMessageText(reasoningMessage, reasoningText, false);
+          $("chat").scrollTop = $("chat").scrollHeight;
+        } else if (eventData.type === "delta") {
           received = true;
           assistantText += eventData.content || "";
           setMessageText(assistantMessage, assistantText, false);
@@ -861,7 +905,10 @@ on("model", "change", async () => {
 on("reasoning", "change", async () => {
   try { await patchSession({ reasoningLevel: $("reasoning").value || "xhigh" }); } catch (error) { showNotice(`保存推理等级失败：${error.message}`, "error"); }
 });
+on("reasoningDisplay", "change", async () => {
+  try { await patchSession({ reasoningDisplay: $("reasoningDisplay").value || "partial" }); } catch (error) { showNotice(`保存推理显示设置失败：${error.message}`, "error"); }
+});
 on("composer", "submit", sendMessage);
 
 clearChat("输入需求开始生成 ShortX 指令。");
-refresh({ openSettings: true }).then(ensureSession).catch((error) => showNotice(`初始化会话失败：${error.message}`, "error"));
+refresh().then(ensureSession).catch((error) => showNotice(`初始化会话失败：${error.message}`, "error"));
