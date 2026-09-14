@@ -76,7 +76,7 @@ health_version() {
 }
 
 [ "$(id -u)" = 0 ] || fail "必须在 Android Root shell 中运行"
-for command in curl sed od tr sha256sum readlink kill sleep getprop uname cp mv rm chmod; do
+for command in curl sed od tr sha256sum readlink kill sleep getprop uname cp mv rm chmod date cat; do
   command -v "$command" >/dev/null 2>&1 || fail "缺少命令：$command"
 done
 [ -x "$BINARY" ] || fail "当前引擎不存在：$BINARY"
@@ -118,8 +118,18 @@ curl -fsSL --retry 2 --connect-timeout 15 -H 'Accept: application/vnd.github+jso
   rm -f "$JSON"
   fail "无法读取 GitHub Release 列表"
 }
-LATEST=$(sed -n 's/^[[:space:]]*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' "$JSON" | sed -n '1p')
-PREVIOUS=$(sed -n 's/^[[:space:]]*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' "$JSON" | sed -n '2p')
+release_tags() {
+  tr -d '\r\n' < "$JSON" | sed 's/},[[:space:]]*{/}\n{/g' |
+    while IFS= read -r record; do
+      case "$record" in
+        *'"draft":true'*|*'"prerelease":true'*) continue ;;
+      esac
+      printf '%s\n' "$record" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\(v[0-9][0-9A-Za-z._-]*\)".*/\1/p'
+    done
+}
+TAGS=$(release_tags)
+LATEST=$(printf '%s\n' "$TAGS" | sed -n '1p')
+PREVIOUS=$(printf '%s\n' "$TAGS" | sed -n '2p')
 rm -f "$JSON"
 case "$LATEST" in v[0-9]*) ;; *) fail "Release 列表中没有可识别的最新正式版本" ;; esac
 case "$PREVIOUS" in v[0-9]*) ;; *) fail "没有可回退的上一个正式版本" ;; esac
