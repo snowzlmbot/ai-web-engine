@@ -1,0 +1,21 @@
+{
+  "actions": [{
+    "@type": "type.googleapis.com/ShellCommand",
+    "command": "set -u\nBASE=/data/local/ai-instruction\nmkdir -p \"$BASE/scripts\"\ntmp=\"$BASE/scripts/rollback.sh.new\"\nurl=\"https://raw.githubusercontent.com/snowzlmbot/ai-web-engine/main/scripts/rollback.sh?shortx_rollback=$(date +%s)-$$\"\nif curl -fsSL --retry 2 --connect-timeout 15 \"$url\" -o \"$tmp\" && [ -s \"$tmp\" ] && grep -q 'REPO=.*snowzlmbot/ai-web-engine' \"$tmp\" && grep -q 'releases?per_page' \"$tmp\" && grep -q 'SHA256SUMS' \"$tmp\" && grep -q 'ai-web-engine' \"$tmp\" && sh -n \"$tmp\" && chmod 755 \"$tmp\" && mv \"$tmp\" \"$BASE/scripts/rollback.sh\"; then\n  exec \"$BASE/scripts/rollback.sh\"\nelse\n  rm -f \"$tmp\"\n  printf '%s\\n' '[ERROR] rollback.sh 下载或校验失败，已拒绝执行'\n  exit 1\nfi",
+    "singleShot": true,
+    "actionOnError": "Break",
+    "id": "A-shortx-rollback"
+  }],
+  "id": "DA-ai-web-engine-rollback-001",
+  "lastUpdateTime": "1789478400000",
+  "createTime": "0",
+  "author": {"name": "snowzlmbot"},
+  "title": "回退 AI Web 引擎到上一个版本",
+  "description": "仅允许从当前最新正式 Release 回退到紧邻的上一个正式 Release；自动按 Android ABI 选择资产，校验 SHA256、ELF 和健康状态，失败自动恢复当前版本，并保留配置、Key、会话、skills 与日志。",
+  "versionCode": "1",
+  "hook": {},
+  "quit": {},
+  "parameters": []
+}
+###------###
+{"type":"da"}

@@ -39,7 +39,8 @@ update_init_script() {
   if [ ! -s "$INIT_NEW" ] || ! sh -n "$INIT_NEW" || \
      ! grep -q 'RELEASE_BASE_URL=' "$INIT_NEW" || \
      ! grep -q 'unzip -l' "$INIT_NEW" || ! grep -q 'unzip -t' "$INIT_NEW" || \
-     ! grep -q 'start.sh' "$INIT_NEW" || ! grep -q 'stop.sh' "$INIT_NEW"; then
+     ! grep -q 'start.sh' "$INIT_NEW" || ! grep -q 'stop.sh' "$INIT_NEW" || \
+     ! grep -q 'rollback.sh' "$INIT_NEW"; then
     rm -f "$INIT_NEW"
     echo '[ERROR] 最新 init.sh 校验失败，未更新引擎'
     return 1
@@ -50,6 +51,7 @@ update_init_script() {
 }
 
 ensure_latest() {
+  [ "${AI_WEB_ENGINE_SKIP_UPDATE:-0}" = 1 ] && return 0
   [ -n "$REMOTE_VERSION" ] || return 0
   LOCAL_VERSION=$(local_version)
   if [ "$FORCE_UPDATE" != 1 ] && [ "$LOCAL_VERSION" = "$REMOTE_VERSION" ]; then
@@ -66,7 +68,7 @@ ensure_latest() {
 }
 
 REMOTE_VERSION=$(remote_version || true)
-if [ -n "$REMOTE_VERSION" ]; then
+if [ "${AI_WEB_ENGINE_SKIP_UPDATE:-0}" != 1 ] && [ -n "$REMOTE_VERSION" ]; then
   BROWSER_URL="$URL/?engine_version=$REMOTE_VERSION&start=$(date +%s)-$$"
 fi
 
@@ -157,11 +159,12 @@ ensure_latest || { echo '[ERROR] 引擎自动更新失败，未启动新版本';
 [ -f "$CONFIG" ] || { echo '[ERROR] 配置不存在，请先运行初始化'; exit 1; }
 [ -s "$BASE/config/master.key" ] || { echo '[ERROR] master.key 不存在，请先运行初始化'; exit 1; }
 [ -f "$BASE/skills/shortx-rule-creator/SKILL.md" ] || { echo '[ERROR] skills 不存在，请先运行初始化'; exit 1; }
+[ -x "$BASE/scripts/rollback.sh" ] || { echo '[ERROR] rollback.sh 不存在，请先运行初始化'; exit 1; }
 [ "$PORT" != 6666 ] || { echo '[ERROR] 禁止使用浏览器危险端口'; exit 1; }
 
 cd "$BASE" || exit 1
 nohup "$BINARY" --host 127.0.0.1 --port "$PORT" \
-  --skills-dir "$BASE/skills" --config "$CONFIG" \
+  --skills-dir "$BASE/skills" --local-skills-dir "$BASE/This machine skills" --config "$CONFIG" \
   --sessions-dir "$BASE/sessions" --log-dir "$BASE/logs" \
   >>"$BASE/logs/engine.log" 2>&1 &
 PID=$!
@@ -182,7 +185,7 @@ if [ "$STATUS" != 200 ]; then
   exit 1
 fi
 
-if [ -n "$REMOTE_VERSION" ]; then
+if [ "${AI_WEB_ENGINE_SKIP_UPDATE:-0}" != 1 ] && [ -n "$REMOTE_VERSION" ]; then
   RUNNING_VERSION=$(running_version || true)
   if [ "$RUNNING_VERSION" != "$REMOTE_VERSION" ]; then
     echo "[ERROR] 健康检查命中错误版本 running=${RUNNING_VERSION:-unknown} expected=$REMOTE_VERSION"

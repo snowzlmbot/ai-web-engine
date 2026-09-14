@@ -16,6 +16,7 @@ const (
 	ProtocolOpenAI          = "openai"
 	ProtocolOpenAIResponses = "openai-responses"
 	ProtocolAnthropic       = "anthropic"
+	DefaultReasoningLevel   = "xhigh"
 )
 
 var providerIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)

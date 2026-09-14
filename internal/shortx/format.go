@@ -55,12 +55,15 @@ func Parse(input string) (Document, error) {
 	if main == nil {
 		return Document{}, errors.New("主体 JSON 必须是对象")
 	}
+	if err := validateMainKeys(main); err != nil {
+		return Document{}, err
+	}
 	var trailer map[string]any
 	if err := json.Unmarshal([]byte(trailerText), &trailer); err != nil {
 		return Document{}, fmt.Errorf("尾部 JSON 无效: %w", err)
 	}
-	if trailer == nil {
-		return Document{}, errors.New("尾部 JSON 必须是对象")
+	if trailer == nil || len(trailer) != 1 {
+		return Document{}, errors.New("尾部 JSON 只能包含 type 字段")
 	}
 	kind, ok := trailer["type"].(string)
 	if !ok || (kind != "rule" && kind != "da") {
@@ -104,13 +107,27 @@ func Parse(input string) (Document, error) {
 	if err != nil {
 		return Document{}, fmt.Errorf("规范化主体 JSON 失败: %w", err)
 	}
-	trailerCanonical := fmt.Sprintf(`{"type":"%s"}`, kind)
+	trailerBytes, err := json.Marshal(map[string]string{"type": kind})
+	if err != nil {
+		return Document{}, fmt.Errorf("规范化尾部 JSON 失败: %w", err)
+	}
+	trailerCanonical := string(trailerBytes)
 	return Document{
 		Kind:      kind,
 		ID:        main["id"].(string),
 		Title:     main["title"].(string),
 		Canonical: mainCanonical + "\n" + Separator + "\n" + trailerCanonical + "\n",
 	}, nil
+}
+
+func validateMainKeys(main map[string]any) error {
+	allowed := map[string]bool{"actions": true, "id": true, "title": true, "description": true, "versionCode": true, "hook": true, "quit": true, "parameters": true, "facts": true, "conditions": true, "isEnabled": true, "condOp": true, "author": true, "lastUpdateTime": true, "createTime": true}
+	for key := range main {
+		if !allowed[key] {
+			return fmt.Errorf("主体 JSON 包含不支持字段 %q", key)
+		}
+	}
+	return nil
 }
 
 func validateString(object map[string]any, key string) error {
@@ -122,8 +139,14 @@ func validateString(object map[string]any, key string) error {
 }
 
 func validateArray(object map[string]any, key string) error {
-	if _, ok := object[key].([]any); !ok {
+	items, ok := object[key].([]any)
+	if !ok {
 		return fmt.Errorf("字段 %q 必须是数组", key)
+	}
+	for index, item := range items {
+		if _, ok := item.(map[string]any); !ok {
+			return fmt.Errorf("字段 %q 第 %d 项必须是对象", key, index)
+		}
 	}
 	return nil
 }

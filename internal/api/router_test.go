@@ -82,6 +82,25 @@ func TestHealthAndUIExposeBuildVersionAndNoStore(t *testing.T) {
 	}
 }
 
+func TestShortXIndexSourcesExposeRawSnowIndex(t *testing.T) {
+	handler := newTestHandler(t, config.Default())
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/shortx/index-sources", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var payload map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["rawIndex"] != "https://raw.githubusercontent.com/snowzlmbot/ShortX-Files/main/index.json" {
+		t.Fatalf("unexpected raw index: %q", payload["rawIndex"])
+	}
+	if !strings.Contains(payload["officialPage"], "/blob/main/index.json") {
+		t.Fatalf("unexpected official page: %q", payload["officialPage"])
+	}
+}
+
 func TestValidateShortXEndpointReturnsCanonicalOfficialPayload(t *testing.T) {
 	handler := newTestHandler(t, config.Default())
 	input := "{\n  \"actions\": [],\n  \"id\": \"DA-TEST-GENERATE-001\",\n  \"title\": \"测试：一键生成指令\",\n  \"description\": \"保留 $HOME ${value}\\\\n 符号。\",\n  \"versionCode\": \"1\",\n  \"hook\": {},\n  \"quit\": {},\n  \"parameters\": []\n}\n###------###\n{\"type\":\"da\"}\n"

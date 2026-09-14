@@ -83,7 +83,7 @@ func (c *Client) Stream(cfg config.Config, modelID, reasoning, system string, me
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 32<<10))
-		return fmt.Errorf("provider HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+		return classifyProviderError(resp.StatusCode, string(data))
 	}
 	return parseSSE(protocol, resp.Body, emit)
 }
@@ -139,6 +139,20 @@ func effectiveProtocol(cfg config.Config) string {
 		}
 	}
 	return cfg.Protocol
+}
+
+var ErrInsufficientBalance = errors.New("provider account balance is insufficient")
+var ErrInputTokenFloor = errors.New("provider requires at least 10000 input tokens")
+
+func classifyProviderError(status int, body string) error {
+	lower := strings.ToLower(body)
+	if status == http.StatusForbidden && strings.Contains(lower, "insufficient_balance") {
+		return fmt.Errorf("%w: provider returned insufficient balance", ErrInsufficientBalance)
+	}
+	if status == http.StatusBadRequest && (strings.Contains(lower, "10000") || strings.Contains(lower, "fewer than 10000 input tokens")) {
+		return fmt.Errorf("%w: %s", ErrInputTokenFloor, strings.TrimSpace(body))
+	}
+	return fmt.Errorf("provider HTTP %d: %s", status, strings.TrimSpace(body))
 }
 
 func request(cfg config.Config, modelID, reasoning, system string, messages []session.Message) ([]byte, map[string]string, error) {

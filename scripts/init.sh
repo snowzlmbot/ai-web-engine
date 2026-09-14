@@ -9,6 +9,7 @@ RELEASE_BASE_URL=${AI_WEB_ENGINE_RELEASE_BASE_URL:-https://github.com/snowzlmbot
 SKILLS_URL=${AI_WEB_ENGINE_SKILLS_URL:-https://raw.githubusercontent.com/snowzlmbot/ShortX-Files/main/skills/shortx-rule-creator.zip}
 START_URL=${AI_WEB_ENGINE_START_URL:-https://raw.githubusercontent.com/snowzlmbot/ai-web-engine/main/scripts/start.sh}
 STOP_URL=${AI_WEB_ENGINE_STOP_URL:-https://raw.githubusercontent.com/snowzlmbot/ai-web-engine/main/scripts/stop.sh}
+ROLLBACK_URL=${AI_WEB_ENGINE_ROLLBACK_URL:-https://raw.githubusercontent.com/snowzlmbot/ai-web-engine/main/scripts/rollback.sh}
 
 log() { printf '%s\n' "$1"; }
 fail() { log "[ERROR] $1"; exit 1; }
@@ -158,8 +159,9 @@ BINARY="$BASE/bin/ai-web-engine"
 SKILL_DIR="$BASE/skills/shortx-rule-creator"
 START_SCRIPT="$BASE/scripts/start.sh"
 STOP_SCRIPT="$BASE/scripts/stop.sh"
+ROLLBACK_SCRIPT="$BASE/scripts/rollback.sh"
 
-if [ "$FORCE_UPDATE" != 1 ] && [ "$REMOTE_VERSION" = "$LOCAL_VERSION" ] && [ "$LOCAL_ABI" = "$ARCH_NAME" ] && binary_valid "$BINARY" "$ELF_CLASS" "$ELF_MACHINE" && skills_valid "$SKILL_DIR" && script_valid "$START_SCRIPT" && script_valid "$STOP_SCRIPT" && config_valid "$CONFIG" && [ "$(wc -c < "$MASTER_KEY" | tr -d ' \n\t')" = "32" ]; then
+if [ "$FORCE_UPDATE" != 1 ] && [ "$REMOTE_VERSION" = "$LOCAL_VERSION" ] && [ "$LOCAL_ABI" = "$ARCH_NAME" ] && binary_valid "$BINARY" "$ELF_CLASS" "$ELF_MACHINE" && skills_valid "$SKILL_DIR" && script_valid "$START_SCRIPT" && script_valid "$STOP_SCRIPT" && script_valid "$ROLLBACK_SCRIPT" && config_valid "$CONFIG" && [ "$(wc -c < "$MASTER_KEY" | tr -d ' \n\t')" = "32" ]; then
   log "[SKIP] Android 环境已初始化且版本 $REMOTE_VERSION 校验通过"
   exit 0
 fi
@@ -168,12 +170,14 @@ BIN_NEW="$BASE/bin/ai-web-engine.new"
 SKILL_NEW="$BASE/skills/shortx-rule-creator.zip.new"
 START_NEW="$BASE/scripts/start.sh.new"
 STOP_NEW="$BASE/scripts/stop.sh.new"
+ROLLBACK_NEW="$BASE/scripts/rollback.sh.new"
 STAGE="$BASE/skills/.shortx-rule-creator.staging"
 BIN_OLD="$BASE/bin/ai-web-engine.old"
 SKILL_OLD="$BASE/skills/shortx-rule-creator.old"
 START_OLD="$BASE/scripts/start.sh.old"
 STOP_OLD="$BASE/scripts/stop.sh.old"
-rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$BIN_OLD" "$START_OLD" "$STOP_OLD"
+ROLLBACK_OLD="$BASE/scripts/rollback.sh.old"
+rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW" "$BIN_OLD" "$START_OLD" "$STOP_OLD" "$ROLLBACK_OLD"
 rm -rf "$STAGE" "$SKILL_OLD"
 
 log "[FETCH] 下载 Android $ARCH_NAME 引擎 $REMOTE_VERSION"
@@ -184,11 +188,11 @@ fi
 
 log "[FETCH] 下载 shortx-rule-creator skills"
 if curl -fsSL --retry 2 --connect-timeout 15 "$(resource_url "$SKILLS_URL")" -o "$SKILL_NEW"; then
-  [ -s "$SKILL_NEW" ] || { rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW"; fail "skills 下载结果为空；旧 skills 保持不变"; }
-  unzip -t "$SKILL_NEW" >/dev/null 2>&1 || { rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW"; fail "skills ZIP 压缩数据损坏；旧 skills 保持不变"; }
-  safe_zip_entries "$SKILL_NEW" || { rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW"; fail "skills ZIP 路径校验失败；旧 skills 保持不变"; }
+  [ -s "$SKILL_NEW" ] || { rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW"; fail "skills 下载结果为空；旧 skills 保持不变"; }
+  unzip -t "$SKILL_NEW" >/dev/null 2>&1 || { rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW"; fail "skills ZIP 压缩数据损坏；旧 skills 保持不变"; }
+  safe_zip_entries "$SKILL_NEW" || { rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW"; fail "skills ZIP 路径校验失败；旧 skills 保持不变"; }
 else
-  rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW"
+  rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW"
   fail "skills 下载失败；旧 skills 保持不变"
 fi
 log "[FETCH] 下载启动和停止脚本"
@@ -197,16 +201,20 @@ if ! curl -fsSL --retry 2 --connect-timeout 15 "$(resource_url "$START_URL")" -o
   fail "start.sh 下载或校验失败；旧启动环境保持不变"
 fi
 if ! curl -fsSL --retry 2 --connect-timeout 15 "$(resource_url "$STOP_URL")" -o "$STOP_NEW" || ! chmod 755 "$STOP_NEW" || ! script_valid "$STOP_NEW"; then
-  rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW"
+  rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW"
   fail "stop.sh 下载或校验失败；旧启动环境保持不变"
 fi
+if ! curl -fsSL --retry 2 --connect-timeout 15 "$(resource_url "$ROLLBACK_URL")" -o "$ROLLBACK_NEW" || ! chmod 755 "$ROLLBACK_NEW" || ! script_valid "$ROLLBACK_NEW" || ! grep -q 'releases?per_page' "$ROLLBACK_NEW" || ! grep -q 'SHA256SUMS' "$ROLLBACK_NEW"; then
+  rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW"
+  fail "rollback.sh 下载或校验失败；旧启动环境保持不变"
+fi
 mkdir -p "$STAGE" || {
-  rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW"
+  rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW"
   rm -rf "$STAGE"
   fail "创建 skills staging 目录失败；旧资源保持不变"
 }
 if ! unzip -o "$SKILL_NEW" -d "$STAGE" >/dev/null 2>&1 || ! skills_valid "$STAGE/shortx-rule-creator"; then
-  rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW"
+  rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW"
   rm -rf "$STAGE"
   fail "skills 解压或完整性校验失败；旧 skills 保持不变"
 fi
@@ -215,7 +223,7 @@ fi
 # Preserve old payloads until the complete new set has been installed.
 if [ -d "$SKILL_DIR" ]; then
   if ! mv "$SKILL_DIR" "$SKILL_OLD"; then
-    rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW"
+    rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW"
     rm -rf "$STAGE"
     fail "无法保护旧 skills；未替换任何资源"
   fi
@@ -223,7 +231,7 @@ fi
 if [ -e "$BINARY" ]; then
   if ! mv "$BINARY" "$BIN_OLD"; then
     [ -d "$SKILL_OLD" ] && mv "$SKILL_OLD" "$SKILL_DIR"
-    rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW"
+    rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW"
     rm -rf "$STAGE"
     fail "无法保护旧引擎；未替换任何资源"
   fi
@@ -232,7 +240,7 @@ if [ -e "$START_SCRIPT" ]; then
   if ! mv "$START_SCRIPT" "$START_OLD"; then
     [ -f "$BIN_OLD" ] && mv "$BIN_OLD" "$BINARY"
     [ -d "$SKILL_OLD" ] && mv "$SKILL_OLD" "$SKILL_DIR"
-    rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW"
+    rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW"
     rm -rf "$STAGE"
     fail "无法保护旧启动脚本；未替换任何资源"
   fi
@@ -242,53 +250,71 @@ if [ -e "$STOP_SCRIPT" ]; then
     [ -f "$START_OLD" ] && mv "$START_OLD" "$START_SCRIPT"
     [ -f "$BIN_OLD" ] && mv "$BIN_OLD" "$BINARY"
     [ -d "$SKILL_OLD" ] && mv "$SKILL_OLD" "$SKILL_DIR"
-    rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW"
+    rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW"
     rm -rf "$STAGE"
     fail "无法保护旧停止脚本；未替换任何资源"
   fi
 fi
+if [ -e "$ROLLBACK_SCRIPT" ]; then
+  if ! mv "$ROLLBACK_SCRIPT" "$ROLLBACK_OLD"; then
+    [ -f "$STOP_OLD" ] && mv "$STOP_OLD" "$STOP_SCRIPT"
+    [ -f "$START_OLD" ] && mv "$START_OLD" "$START_SCRIPT"
+    [ -f "$BIN_OLD" ] && mv "$BIN_OLD" "$BINARY"
+    [ -d "$SKILL_OLD" ] && mv "$SKILL_OLD" "$SKILL_DIR"
+    rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW"
+    rm -rf "$STAGE"
+    fail "无法保护旧回退脚本；未替换任何资源"
+  fi
+fi
 
 restore_old_payloads() {
-  rm -f "$BINARY" "$START_SCRIPT" "$STOP_SCRIPT"
+  rm -f "$BINARY" "$START_SCRIPT" "$STOP_SCRIPT" "$ROLLBACK_SCRIPT"
   [ -f "$BIN_OLD" ] && mv "$BIN_OLD" "$BINARY"
   [ -d "$SKILL_OLD" ] && mv "$SKILL_OLD" "$SKILL_DIR"
   [ -f "$START_OLD" ] && mv "$START_OLD" "$START_SCRIPT"
   [ -f "$STOP_OLD" ] && mv "$STOP_OLD" "$STOP_SCRIPT"
+  [ -f "$ROLLBACK_OLD" ] && mv "$ROLLBACK_OLD" "$ROLLBACK_SCRIPT"
 }
 
 if ! mv "$BIN_NEW" "$BINARY"; then
   restore_old_payloads
-  rm -f "$SKILL_NEW" "$START_NEW" "$STOP_NEW"
+  rm -f "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW"
   rm -rf "$STAGE"
   fail "引擎安装失败，已恢复旧资源"
 fi
 if ! mv "$STAGE/shortx-rule-creator" "$SKILL_DIR"; then
   restore_old_payloads
-  rm -f "$SKILL_NEW" "$START_NEW" "$STOP_NEW"
+  rm -f "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW"
   rm -rf "$STAGE"
   fail "skills 安装失败，已恢复旧资源"
 fi
 if ! mv "$START_NEW" "$START_SCRIPT"; then
   restore_old_payloads
-  rm -f "$SKILL_NEW" "$STOP_NEW"
+  rm -f "$SKILL_NEW" "$STOP_NEW" "$ROLLBACK_NEW"
   rm -rf "$STAGE"
   fail "start.sh 安装失败，已恢复旧资源"
 fi
 if ! mv "$STOP_NEW" "$STOP_SCRIPT"; then
   restore_old_payloads
-  rm -f "$SKILL_NEW"
+  rm -f "$SKILL_NEW" "$ROLLBACK_NEW"
   rm -rf "$STAGE"
   fail "stop.sh 安装失败，已恢复旧资源"
 fi
+if ! mv "$ROLLBACK_NEW" "$ROLLBACK_SCRIPT"; then
+  restore_old_payloads
+  rm -f "$SKILL_NEW"
+  rm -rf "$STAGE"
+  fail "rollback.sh 安装失败，已恢复旧资源"
+fi
 
-chmod 755 "$BINARY" "$START_SCRIPT" "$STOP_SCRIPT" || {
+chmod 755 "$BINARY" "$START_SCRIPT" "$STOP_SCRIPT" "$ROLLBACK_SCRIPT" || {
   restore_old_payloads
   rm -f "$SKILL_NEW"
   rm -rf "$STAGE"
   fail "启动资源权限设置失败，已恢复旧资源"
 }
 chmod 700 "$SKILL_DIR" 2>/dev/null || true
-if ! binary_valid "$BINARY" "$ELF_CLASS" "$ELF_MACHINE" || ! skills_valid "$SKILL_DIR" || ! script_valid "$START_SCRIPT" || ! script_valid "$STOP_SCRIPT" || ! config_valid "$CONFIG" || [ "$(wc -c < "$MASTER_KEY" | tr -d ' \n\t')" != "32" ]; then
+if ! binary_valid "$BINARY" "$ELF_CLASS" "$ELF_MACHINE" || ! skills_valid "$SKILL_DIR" || ! script_valid "$START_SCRIPT" || ! script_valid "$STOP_SCRIPT" || ! script_valid "$ROLLBACK_SCRIPT" || ! config_valid "$CONFIG" || [ "$(wc -c < "$MASTER_KEY" | tr -d ' \n\t')" != "32" ]; then
   restore_old_payloads
   rm -f "$SKILL_NEW"
   rm -rf "$STAGE"
@@ -311,7 +337,7 @@ if ! mv "$VERSION_NEW" "$BASE/config/version.json"; then
   rm -f "$VERSION_NEW"
   fail "提交版本标记失败，已恢复旧资源"
 fi
-rm -f "$BIN_OLD" "$BIN_NEW" "$SKILL_NEW" "$START_OLD" "$STOP_OLD"
+rm -f "$BIN_OLD" "$BIN_NEW" "$SKILL_NEW" "$START_OLD" "$STOP_OLD" "$ROLLBACK_OLD"
 rm -rf "$SKILL_OLD" "$STAGE"
 
 log "[DONE] Android 首次环境初始化完成：ABI=$ARCH_NAME、引擎、skills、启动脚本、停止脚本、配置、master.key 和目录均已就绪，版本 $REMOTE_VERSION"
