@@ -2,8 +2,10 @@ package skills
 
 import (
 	"archive/zip"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -99,4 +101,102 @@ func TestSelectLocalOnlyLoadsMatchingExtensions(t *testing.T) {
 	if len(selected) != 1 || selected[0].Name != "backup/SKILL.md" {
 		t.Fatalf("selected local skills = %+v", selected)
 	}
+}
+
+func TestRefreshOptionalIndexWritesMetadataOnlyAndUpdates(t *testing.T) {
+	root := t.TempDir()
+	skillDir := filepath.Join(root, "backup")
+	if err := os.MkdirAll(skillDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	body := "# rollback\nThis body must stay out of the index."
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	items, err := RefreshOptionalIndex(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("loaded skills = %d, want 1", len(items))
+	}
+	indexPath := filepath.Join(root, OptionalIndexFile)
+	data, err := os.ReadFile(indexPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var index Index
+	if err := json.Unmarshal(data, &index); err != nil {
+		t.Fatal(err)
+	}
+	if index.Format != 1 || len(index.Skills) != 1 {
+		t.Fatalf("unexpected index: %+v", index)
+	}
+	entry := index.Skills[0]
+	if entry.Name != "backup/SKILL.md" || entry.Path != "backup/SKILL.md" || entry.Type != "folder" || entry.Source != "local" || entry.SizeBytes != len([]byte(body)) {
+		t.Fatalf("unexpected index entry: %+v", entry)
+	}
+	if strings.Contains(string(data), body) {
+		t.Fatal("index contains full skill body")
+	}
+	if mode := indexMode(t, indexPath); mode != 0o600 {
+		t.Fatalf("index mode=%#o, want 0600", mode)
+	}
+
+	newDir := filepath.Join(root, "weather")
+	if err := os.MkdirAll(newDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(newDir, "SKILL.md"), []byte("# weather\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RefreshOptionalIndex(root); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := os.ReadFile(indexPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(updated), "weather/SKILL.md") {
+		t.Fatal("index was not updated after adding a skill")
+	}
+}
+
+func TestRefreshOptionalIndexHandlesMissingAndEmptyRoots(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing")
+	if _, err := RefreshOptionalIndex(missing); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(missing); !os.IsNotExist(err) {
+		t.Fatalf("missing optional root was created: %v", err)
+	}
+
+	empty := t.TempDir()
+	items, err := RefreshOptionalIndex(empty)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("empty root returned %d skills", len(items))
+	}
+	data, err := os.ReadFile(filepath.Join(empty, OptionalIndexFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var index Index
+	if err := json.Unmarshal(data, &index); err != nil {
+		t.Fatal(err)
+	}
+	if index.Format != 1 || len(index.Skills) != 0 {
+		t.Fatalf("unexpected empty index: %+v", index)
+	}
+}
+
+func indexMode(t *testing.T, path string) os.FileMode {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return info.Mode().Perm()
 }

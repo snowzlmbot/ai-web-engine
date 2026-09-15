@@ -65,7 +65,7 @@ func main() {
 		}
 	})
 	addr := fmt.Sprintf("%s:%d", *host, *port)
-	logger.Printf("ready addr=http://%s skills=%s", addr, *skillsDir)
+	logger.Printf("ready addr=http://%s skills=%s localSkills=%s localSkillsIndex=%s", addr, *skillsDir, *localSkillsRoot, filepath.Join(*localSkillsRoot, "skills-index.json"))
 	if err := http.ListenAndServe(addr, server.Handler()); err != nil {
 		logger.Fatal(err)
 	}
