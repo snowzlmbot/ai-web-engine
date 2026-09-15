@@ -803,6 +803,18 @@ async function consumeGeneration(task, { assistantMessage = null, reasoningMessa
       reasoningText += eventData.content || "";
       if (!reasoningMessage) reasoningMessage = addMessage("reasoning", "", false, eventData.draftId || draftId);
       setMessageText(reasoningMessage, reasoningText, false);
+    } else if (eventData.type === "reset") {
+      assistantText = "";
+      reasoningText = "";
+      received = false;
+      setMessageText(assistantMessage, "正在重新连接…", false);
+      if (reasoningMessage) setMessageText(reasoningMessage, "", false);
+      showNotice("上游连接中断，正在重新接收未完成内容。", "warn");
+    } else if (eventData.type === "retry") {
+      const attempt = eventData.attempt || 0;
+      const maxAttempts = eventData.maxAttempts || 6;
+      const delay = Math.max(0, Math.round((eventData.delayMs || 0) / 1000));
+      showNotice(`上游连接中断，正在第 ${attempt}/${maxAttempts} 次重试${delay ? `，等待 ${delay} 秒` : ""}。`, "warn");
     } else if (eventData.type === "delta") {
       received = true;
       assistantText += eventData.content || "";

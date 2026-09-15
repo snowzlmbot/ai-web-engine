@@ -15,7 +15,7 @@ func TestLoadOptionalSupportsDirectoryZipAndSkillFile(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("# folder skill\nUse folder rules."), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: folder-skill\ndescription: 用于本机备份和安全回退的技能。\n---\n# folder skill\nUse folder rules."), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	archive := filepath.Join(root, "bundle.zip")
@@ -28,7 +28,7 @@ func TestLoadOptionalSupportsDirectoryZipAndSkillFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := entry.Write([]byte("# zip skill\nUse zip rules.")); err != nil {
+	if _, err := entry.Write([]byte("---\nname: zip-skill\ndescription: >-\n  用于读取压缩包内的本机扩展技能，\n  仅在匹配请求时按需加载。\n---\n# zip skill\nUse zip rules.")); err != nil {
 		t.Fatal(err)
 	}
 	if err := writer.Close(); err != nil {
@@ -47,6 +47,9 @@ func TestLoadOptionalSupportsDirectoryZipAndSkillFile(t *testing.T) {
 	}
 	if items[0].Source != "local" || items[1].Source != "local-zip" {
 		t.Fatalf("unexpected sources: %+v", items)
+	}
+	if items[0].Summary != "用于本机备份和安全回退的技能。" || !strings.Contains(items[1].Summary, "用于读取压缩包内的本机扩展技能") || !strings.Contains(items[1].Summary, "仅在匹配请求时按需加载") {
+		t.Fatalf("frontmatter descriptions were not summarized: %+v", items)
 	}
 }
 

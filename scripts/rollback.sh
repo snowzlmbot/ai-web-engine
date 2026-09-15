@@ -13,11 +13,19 @@ VERSION_FILE="$BASE/config/version.json"
 LOG="$BASE/logs/engine.log"
 START_SCRIPT="$BASE/scripts/start.sh"
 STOP_SCRIPT="$BASE/scripts/stop.sh"
+MANIFEST_FILE="$BASE/scripts/manifest.json"
+SIGNATURE_FILE="$BASE/scripts/manifest.sig"
+PUBLIC_KEY_FILE="$BASE/scripts/manifest.pub"
 PORT=6688
 URL="http://127.0.0.1:$PORT"
 
 log() { printf '%s\n' "$1"; }
 fail() { log "[ERROR] $1"; exit 1; }
+
+verify_scripts() {
+  [ -x "$BINARY" ] && [ -s "$MANIFEST_FILE" ] && [ -s "$SIGNATURE_FILE" ] && [ -s "$PUBLIC_KEY_FILE" ] || return 1
+  "$BINARY" verify-scripts --manifest "$MANIFEST_FILE" --signature "$SIGNATURE_FILE" --public-key "$PUBLIC_KEY_FILE" --scripts-dir "$BASE/scripts" --version "$(current_version)" >/dev/null 2>&1
+}
 
 binary_valid() {
   candidate=$1
@@ -75,7 +83,14 @@ health_version() {
     | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'
 }
 
-[ "$(id -u)" = 0 ] || fail "必须在 Android Root shell 中运行"
+if [ "$(id -u)" = 0 ]; then
+  :
+else
+  fail "必须在 Android Root shell 中运行"
+fi
+if ! verify_scripts; then
+  fail "scripts 完整性校验失败，拒绝执行回退"
+fi
 for command in curl sed od tr sha256sum readlink kill sleep getprop uname cp mv rm chmod date cat; do
   command -v "$command" >/dev/null 2>&1 || fail "缺少命令：$command"
 done
@@ -109,9 +124,20 @@ BIN_NEW="$BASE/bin/ai-web-engine.rollback.new"
 SUM_NEW="$BASE/bin/SHA256SUMS.rollback.new"
 BIN_BACKUP="$BASE/bin/ai-web-engine.rollback.current"
 VERSION_BACKUP="$BASE/config/version.json.rollback.current"
+SCRIPT_BACKUP_DIR="$BASE/scripts/.rollback-current"
+TARGET_STAGE="$BASE/scripts/.rollback-target"
+TARGET_MANIFEST="$TARGET_STAGE/manifest.json"
+TARGET_SIGNATURE="$TARGET_STAGE/manifest.sig"
+TARGET_PUBLIC_KEY="$TARGET_STAGE/manifest.pub"
+TARGET_INIT="$TARGET_STAGE/init.sh"
+TARGET_START="$TARGET_STAGE/start.sh"
+TARGET_STOP="$TARGET_STAGE/stop.sh"
+TARGET_ROLLBACK="$TARGET_STAGE/rollback.sh"
 HAD_VERSION=0
 [ -s "$VERSION_FILE" ] && HAD_VERSION=1
 rm -f "$JSON" "$BIN_NEW" "$SUM_NEW" "$BIN_BACKUP" "$VERSION_BACKUP"
+rm -rf "$SCRIPT_BACKUP_DIR" "$TARGET_STAGE"
+mkdir -p "$TARGET_STAGE" "$SCRIPT_BACKUP_DIR" || fail "无法创建回退 staging 目录"
 
 curl -fsSL --retry 2 --connect-timeout 15 -H 'Accept: application/vnd.github+json' \
   "$API_BASE/releases?per_page=10&rollback=$(date +%s)-$$" -o "$JSON" || {
@@ -153,30 +179,91 @@ EXPECTED_HASH=$(sed -n "s/^\([0-9A-Fa-f][0-9A-Fa-f]*\)[[:space:]][[:space:]]*$AS
 [ -n "$EXPECTED_HASH" ] || { rm -f "$BIN_NEW" "$SUM_NEW"; fail "SHA256SUMS 中没有当前 ABI 资产"; }
 ACTUAL_HASH=$(sha256sum "$BIN_NEW" | tr -s ' ' | sed 's/[[:space:]].*//')
 [ "$ACTUAL_HASH" = "$EXPECTED_HASH" ] || { rm -f "$BIN_NEW" "$SUM_NEW"; fail "目标引擎 SHA256 校验失败"; }
-binary_valid "$BIN_NEW" "$ELF_CLASS" "$ELF_MACHINE" || { rm -f "$BIN_NEW" "$SUM_NEW"; fail "目标引擎 ELF/ABI 校验失败"; }
+binary_valid "$BIN_NEW" "$ELF_CLASS" "$ELF_MACHINE" || { rm -f "$BIN_NEW" "$SUM_NEW"; rm -rf "$TARGET_STAGE" "$SCRIPT_BACKUP_DIR"; fail "目标引擎 ELF/ABI 校验失败"; }
 
-cp "$BINARY" "$BIN_BACKUP" || { rm -f "$BIN_NEW" "$SUM_NEW"; fail "无法创建当前引擎恢复副本"; }
+for pair in \
+  "manifest.json:manifest.json" \
+  "manifest.sig:manifest.sig" \
+  "manifest.pub:manifest.pub" \
+  "ai-web-engine-script-init.sh:init.sh" \
+  "ai-web-engine-script-start.sh:start.sh" \
+  "ai-web-engine-script-stop.sh:stop.sh" \
+  "ai-web-engine-script-rollback.sh:rollback.sh"; do
+  remote=${pair%%:*}
+  local_name=${pair#*:}
+  curl -fsSL --retry 2 --connect-timeout 15 "$DOWNLOAD_BASE/$PREVIOUS/$remote" -o "$TARGET_STAGE/$local_name" || { rm -f "$BIN_NEW" "$SUM_NEW"; rm -rf "$TARGET_STAGE" "$SCRIPT_BACKUP_DIR"; fail "目标版本完整性资产下载失败：$remote"; }
+  [ -s "$TARGET_STAGE/$local_name" ] || { rm -f "$BIN_NEW" "$SUM_NEW"; rm -rf "$TARGET_STAGE" "$SCRIPT_BACKUP_DIR"; fail "目标版本完整性资产为空：$remote"; }
+done
+for pair in "manifest.json:manifest.json" "manifest.sig:manifest.sig" "manifest.pub:manifest.pub" "ai-web-engine-script-init.sh:init.sh" "ai-web-engine-script-start.sh:start.sh" "ai-web-engine-script-stop.sh:stop.sh" "ai-web-engine-script-rollback.sh:rollback.sh"; do
+  remote=${pair%%:*}
+  local_name=${pair#*:}
+  expected=$(sed -n "s/^\\([0-9A-Fa-f]\\{64\\}\\)[[:space:]][[:space:]]*$remote$/\\1/p" "$SUM_NEW")
+  actual=$(sha256sum "$TARGET_STAGE/$local_name" | tr -s ' ' | sed 's/[[:space:]].*//')
+  [ -n "$expected" ] && [ "$actual" = "$expected" ] || { rm -f "$BIN_NEW" "$SUM_NEW"; rm -rf "$TARGET_STAGE" "$SCRIPT_BACKUP_DIR"; fail "目标版本完整性资产 SHA-256 校验失败：$remote"; }
+done
+chmod 755 "$TARGET_STAGE"/*.sh
+if ! "$BIN_NEW" verify-scripts --manifest "$TARGET_MANIFEST" --signature "$TARGET_SIGNATURE" --public-key "$TARGET_PUBLIC_KEY" --scripts-dir "$TARGET_STAGE" --version "$TARGET" >/dev/null 2>&1; then
+  rm -f "$BIN_NEW" "$SUM_NEW"
+  rm -rf "$TARGET_STAGE" "$SCRIPT_BACKUP_DIR"
+  fail "目标版本脚本签名校验失败，未停止当前引擎"
+fi
+
 cp "$VERSION_FILE" "$VERSION_BACKUP" 2>/dev/null || true
+for file in init.sh start.sh stop.sh rollback.sh manifest.json manifest.sig manifest.pub; do
+  cp "$BASE/scripts/$file" "$SCRIPT_BACKUP_DIR/$file" || {
+    rm -f "$BIN_NEW" "$SUM_NEW" "$BIN_BACKUP" "$VERSION_BACKUP"
+    rm -rf "$TARGET_STAGE" "$SCRIPT_BACKUP_DIR"
+    fail "无法创建当前脚本完整性材料备份：$file"
+  }
+done
 if ! stop_owned; then
   rm -f "$BIN_NEW" "$SUM_NEW" "$BIN_BACKUP" "$VERSION_BACKUP"
+  rm -rf "$TARGET_STAGE" "$SCRIPT_BACKUP_DIR"
   fail "当前引擎未能安全停止，未执行回退"
 fi
+restore_rollback_payloads() {
+  rm -f "$BINARY" "$VERSION_FILE" "$BASE/scripts/init.sh" "$BASE/scripts/start.sh" "$BASE/scripts/stop.sh" "$BASE/scripts/rollback.sh" "$MANIFEST_FILE" "$SIGNATURE_FILE" "$PUBLIC_KEY_FILE"
+  [ -f "$BIN_BACKUP" ] && mv "$BIN_BACKUP" "$BINARY"
+  [ -f "$VERSION_BACKUP" ] && mv "$VERSION_BACKUP" "$VERSION_FILE"
+  for file in init.sh start.sh stop.sh rollback.sh manifest.json manifest.sig manifest.pub; do
+    [ -f "$SCRIPT_BACKUP_DIR/$file" ] && mv "$SCRIPT_BACKUP_DIR/$file" "$BASE/scripts/$file"
+  done
+}
+
 VERSION_NEW="$BASE/config/version.json.rollback.new"
 rm -f "$VERSION_NEW"
 if ! mv "$BIN_NEW" "$BINARY" || ! printf '{"version":"%s","abi":"%s"}\n' "$TARGET" "${ABI:-$MACHINE}" >"$VERSION_NEW" || ! chmod 600 "$VERSION_NEW" || ! mv "$VERSION_NEW" "$VERSION_FILE" || ! chmod 755 "$BINARY"; then
-  rm -f "$BINARY"
-  mv "$BIN_BACKUP" "$BINARY" 2>/dev/null || true
-  [ -s "$VERSION_BACKUP" ] && mv "$VERSION_BACKUP" "$VERSION_FILE" 2>/dev/null || true
+  restore_rollback_payloads
   rm -f "$SUM_NEW"
+  rm -rf "$TARGET_STAGE" "$SCRIPT_BACKUP_DIR"
   start_without_update || true
-  fail "安装目标版本失败，已尝试恢复当前版本"
+  fail "安装目标版本失败，已恢复当前版本"
 fi
+for file in init.sh start.sh stop.sh rollback.sh manifest.json manifest.sig manifest.pub; do
+  cp "$TARGET_STAGE/$file" "$BASE/scripts/$file.rollback.new" || {
+    restore_rollback_payloads
+    rm -f "$VERSION_NEW" "$SUM_NEW"
+    rm -rf "$TARGET_STAGE" "$SCRIPT_BACKUP_DIR"
+    start_without_update || true
+    fail "安装目标完整性材料失败，已恢复当前版本：$file"
+  }
+done
+chmod 755 "$BASE/scripts/init.sh.rollback.new" "$BASE/scripts/start.sh.rollback.new" "$BASE/scripts/stop.sh.rollback.new" "$BASE/scripts/rollback.sh.rollback.new"
+chmod 644 "$BASE/scripts/manifest.json.rollback.new" "$BASE/scripts/manifest.sig.rollback.new" "$BASE/scripts/manifest.pub.rollback.new"
+for file in init.sh start.sh stop.sh rollback.sh manifest.json manifest.sig manifest.pub; do
+  mv "$BASE/scripts/$file.rollback.new" "$BASE/scripts/$file" || {
+    restore_rollback_payloads
+    rm -f "$SUM_NEW"
+    rm -rf "$TARGET_STAGE" "$SCRIPT_BACKUP_DIR"
+    start_without_update || true
+    fail "提交目标完整性材料失败，已恢复当前版本：$file"
+  }
+done
 rm -f "$SUM_NEW"
 if ! start_without_update; then
   stop_owned || true
-  rm -f "$BINARY"
-  mv "$BIN_BACKUP" "$BINARY" 2>/dev/null || true
-  [ -s "$VERSION_BACKUP" ] && mv "$VERSION_BACKUP" "$VERSION_FILE" 2>/dev/null || true
+  restore_rollback_payloads
+  rm -rf "$TARGET_STAGE" "$SCRIPT_BACKUP_DIR"
   start_without_update || true
   fail "目标版本启动失败，已恢复当前版本"
 fi
@@ -188,10 +275,9 @@ while [ "$n" -lt 15 ]; do
   n=$((n + 1))
 done
 if [ "$RUNNING" != "$TARGET" ]; then
-  "$STOP_SCRIPT" >/dev/null 2>&1 || true
-  rm -f "$BINARY"
-  mv "$BIN_BACKUP" "$BINARY" 2>/dev/null || true
-  [ -s "$VERSION_BACKUP" ] && mv "$VERSION_BACKUP" "$VERSION_FILE" 2>/dev/null || true
+  stop_owned || true
+  restore_rollback_payloads
+  rm -rf "$TARGET_STAGE" "$SCRIPT_BACKUP_DIR"
   start_without_update || true
   fail "目标版本健康检查失败，已恢复当前版本"
 fi
