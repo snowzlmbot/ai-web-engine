@@ -9,7 +9,7 @@
 - 新建/列出/删除/恢复历史会话；
 - 会话使用 AES-256-GCM，`config/master.key` 与 `sessions/*.enc` 权限为 600；
 - 启动时递归读取 `skills/**/SKILL.md`，并把 `shortx-rule-creator` 约束放在 system 消息首位；
-- 可选读取 `/data/local/ai-instruction/This machine skills` 下的文件夹、`SKILL.md` 和 ZIP，启动/每次生成前重建索引，仅按需加载匹配扩展；
+- 可选读取 `/data/local/ai-instruction/This machine skills` 下的文件夹、`SKILL.md` 和 ZIP，启动/每次生成前重建索引，仅按需加载匹配扩展；索引写入该目录的 `skills-index.json`，仅含元数据，不含 skill 正文；
 - 模型设置页支持多组 provider 的新增、编辑、切换、删除；每个 provider 使用独立的 `config/providers/<provider-id>.key` 文件（权限 600），协议支持 OpenAI Chat、OpenAI Responses、Anthropic；
 - 移动端会话抽屉支持新建、恢复、删除历史会话；
 - 只读设备能力接口提供 ABI、Root、SELinux、命令、路径和 DNS 能力，作为 ShortX 指令生成上下文；
@@ -103,6 +103,8 @@ sh scripts/start.sh
 - `GET /api/device-capabilities`：只读 Android 设备技术能力
 - `GET /api/skills`
 - `POST /api/skills/reload`
+
+`skills-index.json` 是启动前生成的轻量索引。它只记录可选本机 skills 的元数据；模型生成时仍从目录或 ZIP 按需读取正文。可选目录不存在时不创建且正常启动，已存在的空目录会生成 `{"format":1,"skills":[]}`。
 
 ## Provider Key：本地独立文件
 

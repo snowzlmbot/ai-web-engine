@@ -2,6 +2,8 @@ package skills
 
 import (
 	"archive/zip"
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -18,6 +20,110 @@ type Skill struct {
 	Optional bool   `json:"optional,omitempty"`
 	Summary  string `json:"summary,omitempty"`
 	Text     string `json:"-"`
+}
+
+const OptionalIndexFile = "skills-index.json"
+
+type Index struct {
+	Format int          `json:"format"`
+	Skills []IndexEntry `json:"skills"`
+}
+
+type IndexEntry struct {
+	Name      string `json:"name"`
+	Path      string `json:"path"`
+	Source    string `json:"source"`
+	Type      string `json:"type"`
+	Summary   string `json:"summary,omitempty"`
+	SizeBytes int    `json:"sizeBytes"`
+}
+
+// RefreshOptionalIndex rescans the optional device-local skills root and
+// atomically writes a metadata-only index beside it. A missing root is valid
+// and is deliberately not created.
+func RefreshOptionalIndex(root string) ([]Skill, error) {
+	items, err := LoadOptional(root)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(root) == "" {
+		return items, nil
+	}
+	info, statErr := os.Stat(root)
+	if os.IsNotExist(statErr) {
+		return items, nil
+	}
+	if statErr != nil {
+		return nil, fmt.Errorf("stat local skills for index: %w", statErr)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("local skills path is not a directory: %s", root)
+	}
+	index := Index{Format: 1, Skills: make([]IndexEntry, 0, len(items))}
+	for _, item := range items {
+		typeName := "folder"
+		if item.Source == "local-zip" {
+			typeName = "zip"
+		}
+		index.Skills = append(index.Skills, IndexEntry{
+			Name: item.Name, Path: relativeIndexPath(root, item.Path), Source: item.Source,
+			Type: typeName, Summary: item.Summary, SizeBytes: len([]byte(item.Text)),
+		})
+	}
+	data, err := json.MarshalIndent(index, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("encode local skills index: %w", err)
+	}
+	data = append(data, '\n')
+	if err := writeAtomic(filepath.Join(root, OptionalIndexFile), data, 0o600); err != nil {
+		return nil, fmt.Errorf("write local skills index: %w", err)
+	}
+	return items, nil
+}
+
+func relativeIndexPath(root, skillPath string) string {
+	if strings.Contains(skillPath, "#") {
+		archive, member, ok := strings.Cut(skillPath, "#")
+		if ok {
+			rel, err := filepath.Rel(root, archive)
+			if err == nil {
+				return filepath.ToSlash(rel) + "#" + member
+			}
+		}
+	}
+	rel, err := filepath.Rel(root, skillPath)
+	if err != nil {
+		return filepath.ToSlash(skillPath)
+	}
+	return filepath.ToSlash(rel)
+}
+
+func writeAtomic(path string, data []byte, mode os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".skills-index-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if err := tmp.Chmod(mode); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if _, err := io.Copy(tmp, bytes.NewReader(data)); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return err
+	}
+	return os.Chmod(path, mode)
 }
 
 // Load reads the mandatory packaged skills tree. Missing roots are errors.

@@ -101,6 +101,43 @@ func TestShortXIndexSourcesExposeRawSnowIndex(t *testing.T) {
 	}
 }
 
+func TestServerStartupBuildsLocalSkillsIndex(t *testing.T) {
+	root := t.TempDir()
+	localRoot := filepath.Join(root, "This machine skills", "backup")
+	if err := os.MkdirAll(localRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(localRoot, "SKILL.md"), []byte("# backup\nprivate body is loaded on demand"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	server := newTestServerWithRoot(t, root, "", config.Default())
+	indexPath := filepath.Join(root, "This machine skills", "skills-index.json")
+	data, err := os.ReadFile(indexPath)
+	if err != nil {
+		t.Fatalf("startup index not created: %v", err)
+	}
+	var index struct {
+		Format int `json:"format"`
+		Skills []struct {
+			Name string `json:"name"`
+			Path string `json:"path"`
+			Type string `json:"type"`
+		} `json:"skills"`
+	}
+	if err := json.Unmarshal(data, &index); err != nil {
+		t.Fatal(err)
+	}
+	if index.Format != 1 || len(index.Skills) != 1 || index.Skills[0].Name != "backup/SKILL.md" || index.Skills[0].Path != "backup/SKILL.md" || index.Skills[0].Type != "folder" {
+		t.Fatalf("unexpected startup local skills index: %+v", index)
+	}
+	if strings.Contains(string(data), "private body is loaded on demand") {
+		t.Fatal("startup index contains full local skill body")
+	}
+	if server == nil {
+		t.Fatal("server was not constructed")
+	}
+}
+
 func TestValidateShortXEndpointReturnsCanonicalOfficialPayload(t *testing.T) {
 	handler := newTestHandler(t, config.Default())
 	input := "{\n  \"actions\": [],\n  \"id\": \"DA-TEST-GENERATE-001\",\n  \"title\": \"测试：一键生成指令\",\n  \"description\": \"保留 $HOME ${value}\\\\n 符号。\",\n  \"versionCode\": \"1\",\n  \"hook\": {},\n  \"quit\": {},\n  \"parameters\": []\n}\n###------###\n{\"type\":\"da\"}\n"

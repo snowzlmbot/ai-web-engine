@@ -124,7 +124,7 @@ func (s *Server) refreshSkillsSnapshot() error {
 	if err != nil {
 		return err
 	}
-	localList, err := skills.LoadOptional(s.localSkillsRoot)
+	localList, err := skills.RefreshOptionalIndex(s.localSkillsRoot)
 	if err != nil {
 		return err
 	}
@@ -179,7 +179,7 @@ func NewWithLocalSkills(cfgPath, skillRoot, localSkillsRoot string, cfg config.C
 		return nil, errors.New("shortx-rule-creator/SKILL.md was not loaded")
 	}
 	localRoot := localSkillsRoot
-	localList, localErr := skills.LoadOptional(localRoot)
+	localList, localErr := skills.RefreshOptionalIndex(localRoot)
 	if localErr != nil {
 		return nil, localErr
 	}
@@ -777,7 +777,7 @@ func (s *Server) reloadSkills(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	localList, localErr := skills.LoadOptional(s.localSkillsRoot)
+	localList, localErr := skills.RefreshOptionalIndex(s.localSkillsRoot)
 	if localErr != nil {
 		http.Error(w, localErr.Error(), http.StatusInternalServerError)
 		return
