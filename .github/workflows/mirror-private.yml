@@ -1,0 +1,29 @@
+name: Mirror source to private repository
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Push source mirror
+        env:
+          MIRROR_TOKEN: ${{ secrets.MIRROR_REPO_TOKEN }}
+        run: |
+          set -eu
+          test -n "$MIRROR_TOKEN"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git remote add mirror "https://x-access-token:${MIRROR_TOKEN}@github.com/snowzlmbot/ai-web-engine-mirror.git"
+          git push mirror --all
+          git push mirror --tags

@@ -8,6 +8,9 @@ BINARY="$BASE/bin/ai-web-engine"
 CONFIG="$BASE/config/model_config.json"
 PIDFILE="$BINARY.pid"
 VERSION_FILE="$BASE/config/version.json"
+MANIFEST_FILE="$BASE/scripts/manifest.json"
+SIGNATURE_FILE="$BASE/scripts/manifest.sig"
+PUBLIC_KEY_FILE="$BASE/scripts/manifest.pub"
 PORT=6688
 URL="http://127.0.0.1:$PORT"
 BROWSER_URL="$URL"
@@ -25,6 +28,14 @@ local_version() {
 running_version() {
   curl -fsSL --connect-timeout 5 "$URL/health" 2>/dev/null \
     | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'
+}
+
+verify_scripts() {
+  [ -x "$BINARY" ] || return 1
+  [ -s "$MANIFEST_FILE" ] || return 1
+  [ -s "$SIGNATURE_FILE" ] || return 1
+  [ -s "$PUBLIC_KEY_FILE" ] || return 1
+  "$BINARY" verify-scripts --manifest "$MANIFEST_FILE" --signature "$SIGNATURE_FILE" --public-key "$PUBLIC_KEY_FILE" --scripts-dir "$BASE/scripts" --version "$(local_version)" >/dev/null 2>&1
 }
 
 update_init_script() {
@@ -58,12 +69,7 @@ ensure_latest() {
     return 0
   fi
   echo "[INFO] 本地引擎版本 ${LOCAL_VERSION:-unknown}，云端版本 $REMOTE_VERSION，正在安全更新"
-  update_init_script || return 1
-  if [ "$FORCE_UPDATE" = 1 ]; then
-    AI_WEB_ENGINE_FORCE_UPDATE=1 sh "$BASE/scripts/init.sh" || return 1
-  else
-    sh "$BASE/scripts/init.sh" || return 1
-  fi
+  sh "$BASE/scripts/init.sh" || return 1
   return 0
 }
 
@@ -88,6 +94,11 @@ owned_pid() {
     *) return 1 ;;
   esac
 }
+
+if ! verify_scripts; then
+  echo '[ERROR] scripts 完整性校验失败，拒绝停止/启动引擎；请重新运行 init.sh'
+  exit 1
+fi
 
 engine_uses_port() {
   candidate=$1

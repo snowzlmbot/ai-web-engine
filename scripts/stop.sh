@@ -5,9 +5,22 @@ set -u
 BASE=/data/local/ai-instruction
 BINARY="$BASE/bin/ai-web-engine"
 PIDFILE="$BINARY.pid"
+MANIFEST_FILE="$BASE/scripts/manifest.json"
+SIGNATURE_FILE="$BASE/scripts/manifest.sig"
+PUBLIC_KEY_FILE="$BASE/scripts/manifest.pub"
 LOG="$BASE/logs/engine.log"
 
 log() { printf '%s\n' "$1"; }
+
+verify_scripts() {
+  [ -x "$BINARY" ] && [ -s "$MANIFEST_FILE" ] && [ -s "$SIGNATURE_FILE" ] && [ -s "$PUBLIC_KEY_FILE" ] || return 1
+  "$BINARY" verify-scripts --manifest "$MANIFEST_FILE" --signature "$SIGNATURE_FILE" --public-key "$PUBLIC_KEY_FILE" --scripts-dir "$BASE/scripts" >/dev/null 2>&1
+}
+
+if ! verify_scripts; then
+  log '[ERROR] scripts 完整性校验失败，拒绝停止引擎'
+  exit 1
+fi
 
 if [ ! -s "$PIDFILE" ]; then
   log '[INFO] 未运行'

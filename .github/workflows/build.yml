@@ -86,14 +86,34 @@ jobs:
           path: dist
           pattern: ai-web-engine-android-*
           merge-multiple: true
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
       - name: Validate and package all architectures
+        env:
+          SCRIPT_SIGNING_KEY_PEM: ${{ secrets.SCRIPT_SIGNING_KEY_PEM }}
+          RELEASE_VERSION: ${{ github.ref_name }}
         run: |
           set -eu
           test "$(find dist -maxdepth 1 -type f | wc -l)" -eq 4
           for f in dist/*; do test -s "$f"; done
+          test -n "$SCRIPT_SIGNING_KEY_PEM"
+          key_file=$(mktemp)
+          trap 'rm -f "$key_file"' EXIT
+          printf '%s\n' "$SCRIPT_SIGNING_KEY_PEM" > "$key_file"
+          version=${RELEASE_VERSION#v}
+          go run ./cmd sign-scripts --version "$version" --scripts-dir scripts --private-key "$key_file" --manifest dist/manifest.json --signature dist/manifest.sig --public-key dist/manifest.pub
+          for binary in dist/ai-web-engine-android-*; do
+            test -s "$binary"
+          done
+          go run ./cmd verify-scripts --manifest dist/manifest.json --signature dist/manifest.sig --public-key dist/manifest.pub --scripts-dir scripts --version "$version"
           cp manifest-android.json dist/manifest-android.json
-          (cd dist && sha256sum ai-web-engine-android-* manifest-android.json > SHA256SUMS)
-          (cd dist && zip -9 -r ../ai-web-engine-android-all.zip ai-web-engine-android-* manifest-android.json SHA256SUMS)
+          cp scripts/init.sh dist/ai-web-engine-script-init.sh
+          cp scripts/start.sh dist/ai-web-engine-script-start.sh
+          cp scripts/stop.sh dist/ai-web-engine-script-stop.sh
+          cp scripts/rollback.sh dist/ai-web-engine-script-rollback.sh
+          (cd dist && sha256sum ai-web-engine-android-* manifest-android.json manifest.json manifest.sig manifest.pub ai-web-engine-script-*.sh > SHA256SUMS)
+          (cd dist && zip -9 -r ../ai-web-engine-android-all.zip ai-web-engine-android-* manifest-android.json manifest.json manifest.sig manifest.pub ai-web-engine-script-*.sh SHA256SUMS)
           test -s ai-web-engine-android-all.zip
       - name: Release
         uses: softprops/action-gh-release@v2
@@ -105,6 +125,13 @@ jobs:
             dist/ai-web-engine-android-x86_64
             dist/ai-web-engine-android-x86
             dist/manifest-android.json
+            dist/manifest.json
+            dist/manifest.sig
+            dist/manifest.pub
+            dist/ai-web-engine-script-init.sh
+            dist/ai-web-engine-script-start.sh
+            dist/ai-web-engine-script-stop.sh
+            dist/ai-web-engine-script-rollback.sh
             dist/SHA256SUMS
             ai-web-engine-android-all.zip
           generate_release_notes: true

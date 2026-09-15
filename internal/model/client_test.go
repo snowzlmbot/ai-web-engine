@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/snowzlmbot/ai-web-engine/internal/config"
 	"github.com/snowzlmbot/ai-web-engine/internal/session"
@@ -317,6 +318,39 @@ func TestSystemResolverDoesNotRequireNetDNSProperties(t *testing.T) {
 	t.Setenv("AI_WEB_ENGINE_DNS", "")
 	if got := parseResolverOutput("Name: example\nAddress: 192.0.2.10\n"); len(got) != 1 || got[0] != "192.0.2.10" {
 		t.Fatalf("system resolver parser = %v", got)
+	}
+}
+
+func TestParseSSERejectsTruncatedStreamAsRetryable(t *testing.T) {
+	for _, input := range []string{
+		"data: {\\\"choices\\\":[{\\\"delta\\\":{\\\"content\\\":\\\"partial\\\"}}]}\\n\\n",
+		"data: {\\\"choices\\\":[{\\\"delta\\\":{\\\"content\\\":\\\"partial\\\"}}]}",
+	} {
+		err := parseSSE(config.ProtocolOpenAI, strings.NewReader(input), func(Delta) error { return nil })
+		if !errors.Is(err, ErrRetryableStream) {
+			t.Fatalf("truncated stream error=%v", err)
+		}
+	}
+}
+
+func TestParseSSEAnthropicMessageStopCompletes(t *testing.T) {
+	input := "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"ok\"}}\n\ndata: {\"type\":\"message_stop\"}\n\n"
+	var text string
+	var done bool
+	if err := parseSSE(config.ProtocolAnthropic, strings.NewReader(input), func(delta Delta) error { text += delta.Content; done = done || delta.Done; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if text != "ok" || !done {
+		t.Fatalf("text=%q done=%v", text, done)
+	}
+}
+
+func TestRetryDelayIsWithinFiveToNineSeconds(t *testing.T) {
+	for attempt := 1; attempt <= MaxStreamRetries; attempt++ {
+		delay := retryDelay(attempt)
+		if delay < 5*time.Second || delay > 9*time.Second {
+			t.Fatalf("attempt %d delay=%s", attempt, delay)
+		}
 	}
 }
 
