@@ -254,16 +254,64 @@ func sortSkills(items []Skill) {
 }
 
 func summary(text string) string {
+	if description := frontmatterDescription(text); description != "" {
+		return compactSummary(description)
+	}
 	for _, line := range strings.Split(text, "\n") {
 		line = strings.TrimSpace(strings.TrimPrefix(line, "#"))
 		if line != "" && !strings.HasPrefix(line, "---") && !strings.Contains(line, ":") {
-			if len([]rune(line)) > 180 {
-				return string([]rune(line)[:180])
-			}
-			return line
+			return compactSummary(line)
 		}
 	}
 	return ""
+}
+
+func frontmatterDescription(text string) string {
+	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
+		return ""
+	}
+	end := -1
+	for index := 1; index < len(lines); index++ {
+		if strings.TrimSpace(lines[index]) == "---" {
+			end = index
+			break
+		}
+	}
+	if end < 0 {
+		return ""
+	}
+	for index := 1; index < end; index++ {
+		line := strings.TrimSpace(lines[index])
+		if !strings.HasPrefix(line, "description:") {
+			continue
+		}
+		value := strings.TrimSpace(strings.TrimPrefix(line, "description:"))
+		if value != "" && value != ">" && value != ">-" && value != "|" && value != "|-" {
+			return strings.Trim(value, "\\\"'")
+		}
+		var parts []string
+		for next := index + 1; next < end; next++ {
+			if strings.TrimSpace(lines[next]) == "" {
+				continue
+			}
+			if len(lines[next]) > 0 && lines[next][0] != ' ' && lines[next][0] != '	' {
+				break
+			}
+			parts = append(parts, strings.TrimSpace(lines[next]))
+		}
+		return strings.Join(parts, " ")
+	}
+	return ""
+}
+
+func compactSummary(value string) string {
+	value = strings.Join(strings.Fields(value), " ")
+	value = strings.Trim(value, "\\\"'")
+	if runes := []rune(value); len(runes) > 180 {
+		return string(runes[:180])
+	}
+	return value
 }
 
 func buildPrompt(items []Skill) string {

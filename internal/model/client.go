@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/snowzlmbot/ai-web-engine/internal/config"
@@ -25,7 +26,8 @@ import (
 )
 
 type Client struct {
-	HTTP *http.Client
+	HTTP  *http.Client
+	Sleep func(time.Duration)
 }
 
 func NewClient() *Client {
@@ -42,12 +44,70 @@ func NewClient() *Client {
 }
 
 type Delta struct {
-	Content   string
-	Reasoning string
-	Done      bool
+	Content      string
+	Reasoning    string
+	Done         bool
+	Reset        bool
+	RetryAttempt int
+}
+
+const (
+	MaxStreamRetries = 6
+	MinRetryDelay    = 5 * time.Second
+	MaxRetryDelay    = 9 * time.Second
+)
+
+var ErrRetryableStream = errors.New("provider stream interrupted and can be retried")
+
+var retryJitter atomic.Uint64
+
+func retryDelay(attempt int) time.Duration {
+	seed := retryJitter.Add(0x9e3779b9)
+	delta := int((seed + uint64(attempt*17)) % 5)
+	return MinRetryDelay + time.Duration(delta)*time.Second
 }
 
 func (c *Client) Stream(cfg config.Config, modelID, reasoning, system string, messages []session.Message, emit func(Delta) error) error {
+	return c.streamWithRetry(cfg, modelID, reasoning, system, messages, emit, nil)
+}
+
+func (c *Client) StreamWithRetry(cfg config.Config, modelID, reasoning, system string, messages []session.Message, emit func(Delta) error, onRetry func(attempt int, delay time.Duration)) error {
+	return c.streamWithRetry(cfg, modelID, reasoning, system, messages, emit, onRetry)
+}
+
+func (c *Client) streamWithRetry(cfg config.Config, modelID, reasoning, system string, messages []session.Message, emit func(Delta) error, onRetry func(attempt int, delay time.Duration)) error {
+	var last error
+	for attempt := 0; attempt <= MaxStreamRetries; attempt++ {
+		if attempt > 0 {
+			delay := retryDelay(attempt)
+			if delay > MaxRetryDelay {
+				delay = MaxRetryDelay
+			}
+			if onRetry != nil {
+				onRetry(attempt, delay)
+			}
+			if err := emit(Delta{Reset: true, RetryAttempt: attempt}); err != nil {
+				return err
+			}
+			if c.Sleep != nil {
+				c.Sleep(delay)
+			} else {
+				time.Sleep(delay)
+			}
+		}
+		last = c.streamOnce(cfg, modelID, reasoning, system, messages, emit)
+		if last == nil || !IsRetryableStreamError(last) || attempt == MaxStreamRetries {
+			return last
+		}
+	}
+	return last
+}
+
+func IsRetryableStreamError(err error) bool {
+	return errors.Is(err, ErrRetryableStream) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)
+}
+
+func (c *Client) streamOnce(cfg config.Config, modelID, reasoning, system string, messages []session.Message, emit func(Delta) error) error {
 	if cfg.APIKey == "" {
 		return errors.New("API key is not configured")
 	}
@@ -70,17 +130,25 @@ func (c *Client) Stream(cfg config.Config, modelID, reasoning, system string, me
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
 		// Android's native curl uses bionic/netd for name resolution. A
 		// CGO-disabled Go binary cannot always reach that resolver directly,
 		// so retry the same HTTPS request through the system curl without
 		// putting the API key in argv, logs, or persistent configuration.
 		if fallbackErr := streamWithAndroidCurl(endpoint, body, headers, protocol, emit); fallbackErr == nil {
 			return nil
+		} else if IsRetryableStreamError(fallbackErr) {
+			return fallbackErr
 		} else {
-			return fmt.Errorf("provider request: %w; Android system curl fallback: %v", err, fallbackErr)
+			return fmt.Errorf("%w: provider request: %v; Android system curl fallback: %v", ErrRetryableStream, err, fallbackErr)
 		}
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= 500 && resp.StatusCode <= 599 {
+		return fmt.Errorf("%w: provider HTTP %d", ErrRetryableStream, resp.StatusCode)
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 32<<10))
 		return classifyProviderError(resp.StatusCode, string(data))
@@ -227,6 +295,7 @@ func parseSSE(protocol string, reader io.Reader, emit func(Delta) error) error {
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 4096), 2<<20)
 	var data []string
+	completed := false
 	flush := func() error {
 		if len(data) == 0 {
 			return nil
@@ -234,11 +303,12 @@ func parseSSE(protocol string, reader io.Reader, emit func(Delta) error) error {
 		payload := strings.Join(data, "\n")
 		data = nil
 		if payload == "[DONE]" {
+			completed = true
 			return emit(Delta{Done: true})
 		}
 		var object map[string]any
 		if err := json.Unmarshal([]byte(payload), &object); err != nil {
-			return nil
+			return ErrRetryableStream
 		}
 		if protocol == config.ProtocolOpenAIResponses {
 			typeName, _ := object["type"].(string)
@@ -247,10 +317,15 @@ func parseSSE(protocol string, reader io.Reader, emit func(Delta) error) error {
 				text, _ := object["delta"].(string)
 				return emit(Delta{Reasoning: text})
 			case "response.completed", "response.done":
+				completed = true
 				return emit(Delta{Done: true})
 			case "response.failed", "response.error":
 				return fmt.Errorf("Responses API returned %s", typeName)
 			}
+		}
+		if protocol == config.ProtocolAnthropic && objectType(object) == "message_stop" {
+			completed = true
+			return emit(Delta{Done: true})
 		}
 		delta := extract(protocol, object)
 		if delta.Content != "" || delta.Reasoning != "" {
@@ -271,9 +346,20 @@ func parseSSE(protocol string, reader io.Reader, emit func(Delta) error) error {
 		}
 	}
 	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("%w: %v", ErrRetryableStream, err)
+	}
+	if err := flush(); err != nil {
 		return err
 	}
-	return flush()
+	if !completed {
+		return ErrRetryableStream
+	}
+	return nil
+}
+
+func objectType(object map[string]any) string {
+	value, _ := object["type"].(string)
+	return value
 }
 
 func extract(protocol string, object map[string]any) Delta {

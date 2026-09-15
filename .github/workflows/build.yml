@@ -3,6 +3,8 @@ name: build
 on:
   push:
     tags: ['v*']
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -86,63 +88,22 @@ jobs:
           path: dist
           pattern: ai-web-engine-android-*
           merge-multiple: true
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
       - name: Validate and package all architectures
         run: |
           set -eu
           test "$(find dist -maxdepth 1 -type f | wc -l)" -eq 4
           for f in dist/*; do test -s "$f"; done
           cp manifest-android.json dist/manifest-android.json
-          (cd dist && sha256sum ai-web-engine-android-* manifest-android.json > SHA256SUMS)
-          (cd dist && zip -9 -r ../ai-web-engine-android-all.zip ai-web-engine-android-* manifest-android.json SHA256SUMS)
+          cp scripts/init.sh dist/ai-web-engine-script-init.sh
+          cp scripts/start.sh dist/ai-web-engine-script-start.sh
+          cp scripts/stop.sh dist/ai-web-engine-script-stop.sh
+          cp scripts/rollback.sh dist/ai-web-engine-script-rollback.sh
+          (cd dist && sha256sum ai-web-engine-android-* manifest-android.json ai-web-engine-script-*.sh > SHA256SUMS)
+          (cd dist && zip -9 -r ../ai-web-engine-android-all.zip ai-web-engine-android-* manifest-android.json ai-web-engine-script-*.sh SHA256SUMS)
           test -s ai-web-engine-android-all.zip
-      - name: Release
-        uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          files: |
-            dist/ai-web-engine-android-arm64
-            dist/ai-web-engine-android-armv7
-            dist/ai-web-engine-android-x86_64
-            dist/ai-web-engine-android-x86
-            dist/manifest-android.json
-            dist/SHA256SUMS
-            ai-web-engine-android-all.zip
-          generate_release_notes: true
-      - name: Retain only the newest two releases after successful current release
-        if: success() && startsWith(github.ref, 'refs/tags/')
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CURRENT_TAG: ${{ github.ref_name }}
-        run: |
-          set -eu
-          releases=$(mktemp)
-          trap 'rm -f "$releases"' EXIT
-          gh release list --limit 100 --json tagName,isDraft --jq '.[] | select(.isDraft == false) | .tagName' |
-            sort -V -r >"$releases"
-          keep=0
-          while IFS= read -r tag; do
-            [ -n "$tag" ] || continue
-            keep=$((keep + 1))
-            if [ "$keep" -le 2 ]; then
-              continue
-            fi
-            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
-          done <"$releases"
-          test "$(gh release list --limit 100 --json tagName,isDraft --jq '[.[] | select(.isDraft == false)] | length')" -le 2
-
-  sync-changelog:
-    needs: package
-    if: success() && startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Notify changelog repository
-        env:
-          GH_TOKEN: ${{ secrets.CHANGELOG_REPO_TOKEN }}
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: |
-          set -eu
-          test -n "$GH_TOKEN" || { echo 'CHANGELOG_REPO_TOKEN is required for changelog sync' >&2; exit 1; }
-          gh api --method POST repos/snowzlmbot/ai-web-engine-changelog/dispatches \
-            -f event_type=ai-web-engine-release \
-            -f "client_payload[tag_name]=$RELEASE_TAG" \
-            -f "client_payload[source_repo]=$GITHUB_REPOSITORY"
+      - name: Release disabled in public repository
+        if: ${{ false }}
+        run: echo 'Signed releases are published only from the private source repository.'

@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -17,12 +18,14 @@ import (
 
 	"github.com/snowzlmbot/ai-web-engine/internal/buildinfo"
 	"github.com/snowzlmbot/ai-web-engine/internal/config"
+	"github.com/snowzlmbot/ai-web-engine/internal/contextx"
 	"github.com/snowzlmbot/ai-web-engine/internal/device"
 	"github.com/snowzlmbot/ai-web-engine/internal/generation"
 	"github.com/snowzlmbot/ai-web-engine/internal/model"
 	"github.com/snowzlmbot/ai-web-engine/internal/session"
 	"github.com/snowzlmbot/ai-web-engine/internal/shortx"
 	"github.com/snowzlmbot/ai-web-engine/internal/skills"
+	"github.com/snowzlmbot/ai-web-engine/internal/workspace"
 	"github.com/snowzlmbot/ai-web-engine/web"
 )
 
@@ -113,10 +116,54 @@ func (s *Server) prepareChat(req chatRequest) (session.Session, config.Config, s
 	if prompt := skills.BuildSelectedPrompt(local); prompt != "" {
 		system += "\n\n" + prompt
 	}
+	compacted := contextx.Compact(item.Messages, contextx.Options{MaxMessages: 24, MaxMessageRunes: 24000})
+	messagesForModel := compacted.Messages
+	referenceNames := requiredReferences(req.Message)
+	refs, _ := contextx.ReadReferences(s.workspace, workspace.RootSkills, referenceNames, 24000)
+	for _, ref := range refs {
+		system += "\n\n--- OFFICIAL REFERENCE " + ref.Name + " ---\n" + ref.Content
+		if ref.Truncated {
+			system += "\n[reference truncated for context budget; source remains readable through workspace API]"
+		}
+	}
+	if compacted.Compacted {
+		system += "\n\n[context policy] " + compacted.Notice
+	}
 	if capabilityPrompt := device.Collect().Prompt(); capabilityPrompt != "" {
 		system += "\n\n" + capabilityPrompt
 	}
-	return item, cfg, modelID, system, append([]session.Message(nil), item.Messages...), nil
+	return item, cfg, modelID, system, messagesForModel, nil
+}
+
+func requiredReferences(request string) []string {
+	request = strings.ToLower(request)
+	seen := make(map[string]bool)
+	var result []string
+	add := func(name string) {
+		if !seen[name] {
+			seen[name] = true
+			result = append(result, "shortx-rule-creator/references/"+name)
+		}
+	}
+	if strings.Contains(request, "触发") || strings.Contains(request, "每天") || strings.Contains(request, "通知") || strings.Contains(request, "trigger") || strings.Contains(request, "schedule") {
+		add("triggers.md")
+	}
+	if strings.Contains(request, "条件") || strings.Contains(request, "判断") || strings.Contains(request, "if") || strings.Contains(request, "condition") {
+		add("conditions.md")
+	}
+	if strings.Contains(request, "动作") || strings.Contains(request, "弹窗") || strings.Contains(request, "浏览器") || strings.Contains(request, "安装") || strings.Contains(request, "action") || strings.Contains(request, "browser") || strings.Contains(request, "apk") {
+		add("actions.md")
+	}
+	if strings.Contains(request, "变量") || strings.Contains(request, "参数") || strings.Contains(request, "上下文") || strings.Contains(request, "variable") || strings.Contains(request, "parameter") {
+		add("variables.md")
+	}
+	if strings.Contains(request, "hook") || strings.Contains(request, "quit") || strings.Contains(request, "循环") || strings.Contains(request, "脚本") || strings.Contains(request, "loop") || strings.Contains(request, "shell") {
+		add("advanced.md")
+	}
+	if strings.Contains(request, "示例") || strings.Contains(request, "example") || len(result) >= 3 {
+		add("examples.md")
+	}
+	return result
 }
 
 func (s *Server) refreshSkillsSnapshot() error {
@@ -154,6 +201,8 @@ type Server struct {
 	generationMu    sync.Mutex
 	sessionMu       sync.Mutex
 	sessionLocks    map[string]*sync.Mutex
+	workspace       *workspace.Store
+	workspaceMu     sync.RWMutex
 }
 
 func New(cfgPath, skillRoot string, cfg config.Config, store *session.Store, logger *log.Logger) (*Server, error) {
@@ -183,12 +232,14 @@ func NewWithLocalSkills(cfgPath, skillRoot, localSkillsRoot string, cfg config.C
 	if localErr != nil {
 		return nil, localErr
 	}
+	workspaceStore := workspace.New(skillRoot, localRoot, filepath.Join(filepath.Dir(localRoot), "logs"))
 	return &Server{
 		cfgPath: cfgPath, cfg: cfg, store: store, client: model.NewClient(),
 		skillRoot: skillRoot, localSkillsRoot: localRoot, skillList: list, localSkillList: localList, skillText: text, logger: logger,
 		instanceID:   fmt.Sprintf("%d-%d", time.Now().UnixNano(), os.Getpid()),
 		generations:  generation.NewManager(),
 		sessionLocks: make(map[string]*sync.Mutex),
+		workspace:    workspaceStore,
 	}, nil
 }
 
@@ -270,6 +321,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/generations/", s.generationByIDHandler)
 	mux.HandleFunc("/api/shortx/validate", s.validateShortX)
 	mux.HandleFunc("/api/shortx/index-sources", s.shortXIndexSources)
+	mux.HandleFunc("/api/workspace/", s.workspaceHandler)
 	return mux
 }
 
@@ -759,10 +811,10 @@ func (s *Server) skillsHandler(w http.ResponseWriter, _ *http.Request) {
 	defer s.skillMu.RUnlock()
 	out := make([]map[string]any, 0, len(s.skillList)+len(s.localSkillList))
 	for _, item := range s.skillList {
-		out = append(out, map[string]any{"name": item.Name, "path": item.Path, "source": "official", "optional": false})
+		out = append(out, map[string]any{"name": item.Name, "path": item.Path, "source": "official", "optional": false, "summary": item.Summary})
 	}
 	for _, item := range s.localSkillList {
-		out = append(out, map[string]any{"name": item.Name, "path": item.Path, "source": "local", "optional": true})
+		out = append(out, map[string]any{"name": item.Name, "path": item.Path, "source": "local", "optional": true, "summary": item.Summary})
 	}
 	s.writeJSON(w, http.StatusOK, out)
 }
@@ -857,17 +909,18 @@ func (s *Server) runGeneration(task *generation.Task, item session.Session, cfg 
 	lock.Lock()
 	defer lock.Unlock()
 	var assistant strings.Builder
-	err := s.client.Stream(cfg, modelID, item.ReasoningLevel, system, messages, func(delta model.Delta) error {
+	var reasoningShown int
+	err := s.client.StreamWithRetry(cfg, modelID, item.ReasoningLevel, system, messages, func(delta model.Delta) error {
+		if delta.Reset {
+			assistant.Reset()
+			reasoningShown = 0
+			task.Publish(generation.Event{Type: "reset", Message: "已清理本次未完成增量，准备重新接收"})
+			return nil
+		}
 		if delta.Reasoning != "" && item.ReasoningDisplay != session.ReasoningDisplayOff {
 			content := delta.Reasoning
 			if item.ReasoningDisplay == session.ReasoningDisplayPartial {
-				used := 0
-				for _, previous := range func() []generation.Event { events, _ := task.Snapshot(); return events }() {
-					if previous.Type == "reasoning" {
-						used += len([]rune(previous.Content))
-					}
-				}
-				remaining := 4000 - used
+				remaining := 4000 - reasoningShown
 				if remaining <= 0 {
 					content = ""
 				} else if runes := []rune(content); len(runes) > remaining {
@@ -875,6 +928,7 @@ func (s *Server) runGeneration(task *generation.Task, item session.Session, cfg 
 				}
 			}
 			if content != "" {
+				reasoningShown += len([]rune(content))
 				task.Publish(generation.Event{Type: "reasoning", Content: content})
 			}
 		}
@@ -883,6 +937,8 @@ func (s *Server) runGeneration(task *generation.Task, item session.Session, cfg 
 			task.Publish(generation.Event{Type: "delta", Content: delta.Content})
 		}
 		return nil
+	}, func(attempt int, delay time.Duration) {
+		task.Publish(generation.Event{Type: "retry", Message: fmt.Sprintf("连接中断，正在进行第 %d/%d 次重试，等待 %d 秒", attempt, model.MaxStreamRetries, int(delay/time.Second))})
 	})
 	if err != nil {
 		s.logger.Printf("generation task %s error: %v", task.ID, err)
@@ -931,6 +987,89 @@ func (s *Server) generationByIDHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+func (s *Server) workspaceHandler(w http.ResponseWriter, r *http.Request) {
+	if s.workspace == nil {
+		http.Error(w, "workspace unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	pathValue := strings.TrimPrefix(r.URL.Path, "/api/workspace/")
+	pathValue = strings.Trim(pathValue, "/")
+	if pathValue == "" || pathValue == "roots" {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		s.writeJSON(w, http.StatusOK, map[string]any{"roots": s.workspace.Roots()})
+		return
+	}
+	parts := strings.Split(pathValue, "/")
+	root, err := url.PathUnescape(parts[0])
+	if err != nil || root == "" {
+		http.Error(w, "invalid workspace root", http.StatusBadRequest)
+		return
+	}
+	rel := ""
+	if len(parts) > 1 {
+		rel, err = url.PathUnescape(strings.Join(parts[1:], "/"))
+		if err != nil {
+			http.Error(w, "invalid workspace path", http.StatusBadRequest)
+			return
+		}
+	}
+	switch r.Method {
+	case http.MethodGet:
+		if rel == "" {
+			entries, listErr := s.workspace.List(root, "")
+			if listErr != nil {
+				http.Error(w, listErr.Error(), workspaceStatus(listErr))
+				return
+			}
+			s.writeJSON(w, http.StatusOK, map[string]any{"root": root, "entries": entries})
+			return
+		}
+		if err := s.writeWorkspaceFile(w, root, rel); err != nil {
+			http.Error(w, err.Error(), workspaceStatus(err))
+		}
+	case http.MethodPut:
+		if err := s.workspace.WriteStream(root, rel, r.Body); err != nil {
+			http.Error(w, err.Error(), workspaceStatus(err))
+			return
+		}
+		if root == workspace.RootLocal {
+			if refreshErr := s.refreshSkillsSnapshot(); refreshErr != nil {
+				http.Error(w, refreshErr.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+		s.writeJSON(w, http.StatusCreated, map[string]any{"ok": true, "root": root, "path": rel})
+	case http.MethodPost:
+		if err := s.workspace.AppendStream(root, rel, r.Body); err != nil {
+			http.Error(w, err.Error(), workspaceStatus(err))
+			return
+		}
+		s.writeJSON(w, http.StatusCreated, map[string]any{"ok": true, "root": root, "path": rel})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) writeWorkspaceFile(w http.ResponseWriter, root, rel string) error {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, err := s.workspace.StreamRead(root, rel, w)
+	return err
+}
+
+func workspaceStatus(err error) int {
+	if errors.Is(err, workspace.ErrUnknownRoot) || errors.Is(err, workspace.ErrUnsafePath) || errors.Is(err, workspace.ErrOfficialReadOnly) || errors.Is(err, workspace.ErrIndexReadOnly) {
+		return http.StatusForbidden
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return http.StatusNotFound
+	}
+	return http.StatusBadRequest
 }
 
 func (s *Server) shortXIndexSources(w http.ResponseWriter, r *http.Request) {
@@ -1073,7 +1212,14 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 
 	var assistant strings.Builder
 	reasoningShown := 0
-	err = s.client.Stream(cfg, modelID, req.ReasoningLevel, system, messages, func(delta model.Delta) error {
+	err = s.client.StreamWithRetry(cfg, modelID, req.ReasoningLevel, system, messages, func(delta model.Delta) error {
+		if delta.Reset {
+			assistant.Reset()
+			reasoningShown = 0
+			sse(w, map[string]any{"type": "reset", "messageId": messageID, "draftId": draftID})
+			flusher.Flush()
+			return nil
+		}
 		if delta.Reasoning != "" {
 			if req.ReasoningDisplay != session.ReasoningDisplayOff {
 				content := delta.Reasoning
@@ -1101,6 +1247,9 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 		return nil
+	}, func(attempt int, delay time.Duration) {
+		sse(w, map[string]any{"type": "retry", "messageId": messageID, "draftId": draftID, "attempt": attempt, "maxAttempts": model.MaxStreamRetries, "delayMs": delay.Milliseconds()})
+		flusher.Flush()
 	})
 	if err != nil {
 		s.logger.Printf("chat error: %v", err)

@@ -7,9 +7,26 @@ BASE=${AI_WEB_ENGINE_BASE:-/data/local/ai-instruction}
 RAW_BASE_URL=${AI_WEB_ENGINE_RAW_BASE_URL:-https://raw.githubusercontent.com/snowzlmbot/ai-web-engine/main}
 RELEASE_BASE_URL=${AI_WEB_ENGINE_RELEASE_BASE_URL:-https://github.com/snowzlmbot/ai-web-engine/releases/download}
 SKILLS_URL=${AI_WEB_ENGINE_SKILLS_URL:-https://raw.githubusercontent.com/snowzlmbot/ShortX-Files/main/skills/shortx-rule-creator.zip}
-START_URL=${AI_WEB_ENGINE_START_URL:-https://raw.githubusercontent.com/snowzlmbot/ai-web-engine/main/scripts/start.sh}
-STOP_URL=${AI_WEB_ENGINE_STOP_URL:-https://raw.githubusercontent.com/snowzlmbot/ai-web-engine/main/scripts/stop.sh}
-ROLLBACK_URL=${AI_WEB_ENGINE_ROLLBACK_URL:-https://raw.githubusercontent.com/snowzlmbot/ai-web-engine/main/scripts/rollback.sh}
+START_URL=${AI_WEB_ENGINE_START_URL:-}
+STOP_URL=${AI_WEB_ENGINE_STOP_URL:-}
+ROLLBACK_URL=${AI_WEB_ENGINE_ROLLBACK_URL:-}
+SCRIPT_MANIFEST_URL=${AI_WEB_ENGINE_SCRIPT_MANIFEST_URL:-}
+SCRIPT_SIGNATURE_URL=${AI_WEB_ENGINE_SCRIPT_SIGNATURE_URL:-}
+SCRIPT_PUBLIC_KEY_URL=${AI_WEB_ENGINE_SCRIPT_PUBLIC_KEY_URL:-}
+SCRIPT_MANIFEST_FILE="$BASE/scripts/manifest.json"
+SCRIPT_SIGNATURE_FILE="$BASE/scripts/manifest.sig"
+SCRIPT_PUBLIC_KEY_FILE="$BASE/scripts/manifest.pub"
+SCRIPT_MANIFEST_NEW="$BASE/scripts/manifest.json.new"
+SCRIPT_SIGNATURE_NEW="$BASE/scripts/manifest.sig.new"
+SCRIPT_PUBLIC_KEY_NEW="$BASE/scripts/manifest.pub.new"
+INIT_URL=${AI_WEB_ENGINE_INIT_URL:-}
+SCRIPT_MANIFEST_OLD="$BASE/scripts/manifest.json.old"
+SCRIPT_SIGNATURE_OLD="$BASE/scripts/manifest.sig.old"
+SCRIPT_PUBLIC_KEY_OLD="$BASE/scripts/manifest.pub.old"
+INIT_SCRIPT="$BASE/scripts/init.sh"
+INIT_NEW="$BASE/scripts/init.sh.new"
+INIT_OLD="$BASE/scripts/init.sh.old"
+SCRIPT_STAGE="$BASE/scripts/.integrity-staging"
 
 log() { printf '%s\n' "$1"; }
 fail() { log "[ERROR] $1"; exit 1; }
@@ -93,6 +110,7 @@ command -v grep >/dev/null 2>&1 || fail "缺少 grep"
 command -v od >/dev/null 2>&1 || fail "缺少 od"
 command -v head >/dev/null 2>&1 || fail "缺少 head"
 command -v wc >/dev/null 2>&1 || fail "缺少 wc"
+command -v cp >/dev/null 2>&1 || fail "缺少 cp"
 command -v date >/dev/null 2>&1 || fail "缺少 date"
 
 ABI=$(getprop ro.product.cpu.abi 2>/dev/null || true)
@@ -152,6 +170,13 @@ resource_url() {
     *) printf '%s?ai_web_engine_init=%s' "$base" "$INIT_CACHE_KEY" ;;
   esac
 }
+if [ -z "$START_URL" ]; then START_URL="$RELEASE_BASE_URL/v$REMOTE_VERSION/ai-web-engine-script-start.sh"; fi
+if [ -z "$STOP_URL" ]; then STOP_URL="$RELEASE_BASE_URL/v$REMOTE_VERSION/ai-web-engine-script-stop.sh"; fi
+if [ -z "$ROLLBACK_URL" ]; then ROLLBACK_URL="$RELEASE_BASE_URL/v$REMOTE_VERSION/ai-web-engine-script-rollback.sh"; fi
+if [ -z "$SCRIPT_MANIFEST_URL" ]; then SCRIPT_MANIFEST_URL="$RELEASE_BASE_URL/v$REMOTE_VERSION/manifest.json"; fi
+if [ -z "$SCRIPT_SIGNATURE_URL" ]; then SCRIPT_SIGNATURE_URL="$RELEASE_BASE_URL/v$REMOTE_VERSION/manifest.sig"; fi
+if [ -z "$SCRIPT_PUBLIC_KEY_URL" ]; then SCRIPT_PUBLIC_KEY_URL="$RELEASE_BASE_URL/v$REMOTE_VERSION/manifest.pub"; fi
+if [ -z "$INIT_URL" ]; then INIT_URL="$RELEASE_BASE_URL/v$REMOTE_VERSION/ai-web-engine-script-init.sh"; fi
 
 LOCAL_VERSION=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$BASE/config/version.json" 2>/dev/null || true)
 LOCAL_ABI=$(sed -n 's/.*"abi"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$BASE/config/version.json" 2>/dev/null || true)
@@ -160,8 +185,15 @@ SKILL_DIR="$BASE/skills/shortx-rule-creator"
 START_SCRIPT="$BASE/scripts/start.sh"
 STOP_SCRIPT="$BASE/scripts/stop.sh"
 ROLLBACK_SCRIPT="$BASE/scripts/rollback.sh"
+INIT_SCRIPT="$BASE/scripts/init.sh"
 
-if [ "$FORCE_UPDATE" != 1 ] && [ "$REMOTE_VERSION" = "$LOCAL_VERSION" ] && [ "$LOCAL_ABI" = "$ARCH_NAME" ] && binary_valid "$BINARY" "$ELF_CLASS" "$ELF_MACHINE" && skills_valid "$SKILL_DIR" && script_valid "$START_SCRIPT" && script_valid "$STOP_SCRIPT" && script_valid "$ROLLBACK_SCRIPT" && config_valid "$CONFIG" && [ "$(wc -c < "$MASTER_KEY" | tr -d ' \n\t')" = "32" ]; then
+integrity_valid() {
+  expected=$1
+  [ -x "$BINARY" ] && [ -s "$SCRIPT_MANIFEST_FILE" ] && [ -s "$SCRIPT_SIGNATURE_FILE" ] && [ -s "$SCRIPT_PUBLIC_KEY_FILE" ] || return 1
+  "$BINARY" verify-scripts --manifest "$SCRIPT_MANIFEST_FILE" --signature "$SCRIPT_SIGNATURE_FILE" --public-key "$SCRIPT_PUBLIC_KEY_FILE" --scripts-dir "$BASE/scripts" --version "$expected" >/dev/null 2>&1
+}
+
+if [ "$FORCE_UPDATE" != 1 ] && [ "$REMOTE_VERSION" = "$LOCAL_VERSION" ] && [ "$LOCAL_ABI" = "$ARCH_NAME" ] && binary_valid "$BINARY" "$ELF_CLASS" "$ELF_MACHINE" && skills_valid "$SKILL_DIR" && script_valid "$INIT_SCRIPT" && script_valid "$START_SCRIPT" && script_valid "$STOP_SCRIPT" && script_valid "$ROLLBACK_SCRIPT" && integrity_valid "$REMOTE_VERSION" && config_valid "$CONFIG" && [ "$(wc -c < "$MASTER_KEY" | tr -d ' \n\t')" = "32" ]; then
   log "[SKIP] Android 环境已初始化且版本 $REMOTE_VERSION 校验通过"
   exit 0
 fi
@@ -171,13 +203,15 @@ SKILL_NEW="$BASE/skills/shortx-rule-creator.zip.new"
 START_NEW="$BASE/scripts/start.sh.new"
 STOP_NEW="$BASE/scripts/stop.sh.new"
 ROLLBACK_NEW="$BASE/scripts/rollback.sh.new"
+INIT_NEW="$BASE/scripts/init.sh.new"
 STAGE="$BASE/skills/.shortx-rule-creator.staging"
 BIN_OLD="$BASE/bin/ai-web-engine.old"
 SKILL_OLD="$BASE/skills/shortx-rule-creator.old"
 START_OLD="$BASE/scripts/start.sh.old"
 STOP_OLD="$BASE/scripts/stop.sh.old"
 ROLLBACK_OLD="$BASE/scripts/rollback.sh.old"
-rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW" "$BIN_OLD" "$START_OLD" "$STOP_OLD" "$ROLLBACK_OLD"
+INIT_OLD="$BASE/scripts/init.sh.old"
+rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW" "$INIT_NEW" "$SCRIPT_MANIFEST_NEW" "$SCRIPT_SIGNATURE_NEW" "$SCRIPT_PUBLIC_KEY_NEW" "$BIN_OLD" "$START_OLD" "$STOP_OLD" "$ROLLBACK_OLD" "$INIT_OLD" "$SCRIPT_MANIFEST_OLD" "$SCRIPT_SIGNATURE_OLD" "$SCRIPT_PUBLIC_KEY_OLD"
 rm -rf "$STAGE" "$SKILL_OLD"
 
 log "[FETCH] 下载 Android $ARCH_NAME 引擎 $REMOTE_VERSION"
@@ -208,15 +242,40 @@ if ! curl -fsSL --retry 2 --connect-timeout 15 "$(resource_url "$ROLLBACK_URL")"
   rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW"
   fail "rollback.sh 下载或校验失败；旧启动环境保持不变"
 fi
+if ! curl -fsSL --retry 2 --connect-timeout 15 "$(resource_url "$SCRIPT_MANIFEST_URL")" -o "$SCRIPT_MANIFEST_NEW" || ! curl -fsSL --retry 2 --connect-timeout 15 "$(resource_url "$SCRIPT_SIGNATURE_URL")" -o "$SCRIPT_SIGNATURE_NEW" || ! curl -fsSL --retry 2 --connect-timeout 15 "$(resource_url "$SCRIPT_PUBLIC_KEY_URL")" -o "$SCRIPT_PUBLIC_KEY_NEW"; then
+  rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW" "$SCRIPT_MANIFEST_NEW" "$SCRIPT_SIGNATURE_NEW" "$SCRIPT_PUBLIC_KEY_NEW"
+  fail "脚本完整性清单下载失败；旧启动环境保持不变"
+fi
+[ -s "$SCRIPT_MANIFEST_NEW" ] && [ -s "$SCRIPT_SIGNATURE_NEW" ] && [ -s "$SCRIPT_PUBLIC_KEY_NEW" ] || {
+  rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW" "$SCRIPT_MANIFEST_NEW" "$SCRIPT_SIGNATURE_NEW" "$SCRIPT_PUBLIC_KEY_NEW"
+  fail "脚本完整性清单为空；旧启动环境保持不变"
+}
+if ! curl -fsSL --retry 2 --connect-timeout 15 "$(resource_url "$INIT_URL")" -o "$INIT_NEW" || ! chmod 755 "$INIT_NEW" || ! script_valid "$INIT_NEW"; then
+  rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW" "$INIT_NEW" "$SCRIPT_MANIFEST_NEW" "$SCRIPT_SIGNATURE_NEW" "$SCRIPT_PUBLIC_KEY_NEW"
+  fail "init.sh 下载或校验失败；旧启动环境保持不变"
+fi
 mkdir -p "$STAGE" || {
   rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW"
   rm -rf "$STAGE"
   fail "创建 skills staging 目录失败；旧资源保持不变"
 }
 if ! unzip -o "$SKILL_NEW" -d "$STAGE" >/dev/null 2>&1 || ! skills_valid "$STAGE/shortx-rule-creator"; then
-  rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW"
+  rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW" "$INIT_NEW" "$SCRIPT_MANIFEST_NEW" "$SCRIPT_SIGNATURE_NEW" "$SCRIPT_PUBLIC_KEY_NEW"
   rm -rf "$STAGE"
   fail "skills 解压或完整性校验失败；旧 skills 保持不变"
+fi
+mkdir -p "$SCRIPT_STAGE" || fail "创建脚本 staging 目录失败"
+cp "$INIT_NEW" "$SCRIPT_STAGE/init.sh" || fail "暂存 init.sh 失败"
+cp "$START_NEW" "$SCRIPT_STAGE/start.sh" || fail "暂存 start.sh 失败"
+cp "$STOP_NEW" "$SCRIPT_STAGE/stop.sh" || fail "暂存 stop.sh 失败"
+cp "$ROLLBACK_NEW" "$SCRIPT_STAGE/rollback.sh" || fail "暂存 rollback.sh 失败"
+cp "$SCRIPT_MANIFEST_NEW" "$SCRIPT_STAGE/manifest.json" || fail "暂存 manifest 失败"
+cp "$SCRIPT_SIGNATURE_NEW" "$SCRIPT_STAGE/manifest.sig" || fail "暂存签名失败"
+cp "$SCRIPT_PUBLIC_KEY_NEW" "$SCRIPT_STAGE/manifest.pub" || fail "暂存公钥失败"
+if ! "$BIN_NEW" verify-scripts --manifest "$SCRIPT_STAGE/manifest.json" --signature "$SCRIPT_STAGE/manifest.sig" --public-key "$SCRIPT_STAGE/manifest.pub" --scripts-dir "$SCRIPT_STAGE" --version "$REMOTE_VERSION" >/dev/null 2>&1; then
+  rm -rf "$SCRIPT_STAGE" "$STAGE"
+  rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW" "$INIT_NEW" "$SCRIPT_MANIFEST_NEW" "$SCRIPT_SIGNATURE_NEW" "$SCRIPT_PUBLIC_KEY_NEW"
+  fail "脚本签名或 SHA-256 校验失败；旧启动环境保持不变"
 fi
 
 # Commit all new payloads only after every download and staging check passed.
@@ -259,65 +318,82 @@ if [ -e "$ROLLBACK_SCRIPT" ]; then
   if ! mv "$ROLLBACK_SCRIPT" "$ROLLBACK_OLD"; then
     [ -f "$STOP_OLD" ] && mv "$STOP_OLD" "$STOP_SCRIPT"
     [ -f "$START_OLD" ] && mv "$START_OLD" "$START_SCRIPT"
+    [ -f "$INIT_OLD" ] && mv "$INIT_OLD" "$INIT_SCRIPT"
     [ -f "$BIN_OLD" ] && mv "$BIN_OLD" "$BINARY"
     [ -d "$SKILL_OLD" ] && mv "$SKILL_OLD" "$SKILL_DIR"
-    rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW"
-    rm -rf "$STAGE"
+    rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW" "$INIT_NEW" "$SCRIPT_MANIFEST_NEW" "$SCRIPT_SIGNATURE_NEW" "$SCRIPT_PUBLIC_KEY_NEW"
+    rm -rf "$STAGE" "$SCRIPT_STAGE"
     fail "无法保护旧回退脚本；未替换任何资源"
   fi
 fi
+if [ -e "$INIT_SCRIPT" ]; then
+  if ! mv "$INIT_SCRIPT" "$INIT_OLD"; then
+    [ -f "$ROLLBACK_OLD" ] && mv "$ROLLBACK_OLD" "$ROLLBACK_SCRIPT"
+    [ -f "$STOP_OLD" ] && mv "$STOP_OLD" "$STOP_SCRIPT"
+    [ -f "$START_OLD" ] && mv "$START_OLD" "$START_SCRIPT"
+    [ -f "$BIN_OLD" ] && mv "$BIN_OLD" "$BINARY"
+    [ -d "$SKILL_OLD" ] && mv "$SKILL_OLD" "$SKILL_DIR"
+    rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW" "$INIT_NEW" "$SCRIPT_MANIFEST_NEW" "$SCRIPT_SIGNATURE_NEW" "$SCRIPT_PUBLIC_KEY_NEW"
+    rm -rf "$STAGE" "$SCRIPT_STAGE"
+    fail "无法保护旧初始化脚本；未替换任何资源"
+  fi
+fi
+for artifact in "$SCRIPT_MANIFEST_FILE:$SCRIPT_MANIFEST_OLD" "$SCRIPT_SIGNATURE_FILE:$SCRIPT_SIGNATURE_OLD" "$SCRIPT_PUBLIC_KEY_FILE:$SCRIPT_PUBLIC_KEY_OLD"; do
+  old=${artifact#*:}
+  current=${artifact%%:*}
+  if [ -e "$current" ]; then
+    if ! mv "$current" "$old"; then
+      rm -f "$BIN_NEW" "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW" "$INIT_NEW" "$SCRIPT_MANIFEST_NEW" "$SCRIPT_SIGNATURE_NEW" "$SCRIPT_PUBLIC_KEY_NEW"
+      rm -rf "$STAGE" "$SCRIPT_STAGE"
+      fail "无法保护旧完整性材料；未替换任何资源"
+    fi
+  fi
+done
 
 restore_old_payloads() {
-  rm -f "$BINARY" "$START_SCRIPT" "$STOP_SCRIPT" "$ROLLBACK_SCRIPT"
+  rm -f "$BINARY" "$START_SCRIPT" "$STOP_SCRIPT" "$ROLLBACK_SCRIPT" "$INIT_SCRIPT" "$SCRIPT_MANIFEST_FILE" "$SCRIPT_SIGNATURE_FILE" "$SCRIPT_PUBLIC_KEY_FILE"
   [ -f "$BIN_OLD" ] && mv "$BIN_OLD" "$BINARY"
   [ -d "$SKILL_OLD" ] && mv "$SKILL_OLD" "$SKILL_DIR"
   [ -f "$START_OLD" ] && mv "$START_OLD" "$START_SCRIPT"
   [ -f "$STOP_OLD" ] && mv "$STOP_OLD" "$STOP_SCRIPT"
   [ -f "$ROLLBACK_OLD" ] && mv "$ROLLBACK_OLD" "$ROLLBACK_SCRIPT"
+  [ -f "$INIT_OLD" ] && mv "$INIT_OLD" "$INIT_SCRIPT"
+  [ -f "$SCRIPT_MANIFEST_OLD" ] && mv "$SCRIPT_MANIFEST_OLD" "$SCRIPT_MANIFEST_FILE"
+  [ -f "$SCRIPT_SIGNATURE_OLD" ] && mv "$SCRIPT_SIGNATURE_OLD" "$SCRIPT_SIGNATURE_FILE"
+  [ -f "$SCRIPT_PUBLIC_KEY_OLD" ] && mv "$SCRIPT_PUBLIC_KEY_OLD" "$SCRIPT_PUBLIC_KEY_FILE"
 }
 
 if ! mv "$BIN_NEW" "$BINARY"; then
   restore_old_payloads
-  rm -f "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW"
-  rm -rf "$STAGE"
+  rm -f "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW" "$INIT_NEW" "$SCRIPT_MANIFEST_NEW" "$SCRIPT_SIGNATURE_NEW" "$SCRIPT_PUBLIC_KEY_NEW"
+  rm -rf "$STAGE" "$SCRIPT_STAGE"
   fail "引擎安装失败，已恢复旧资源"
 fi
 if ! mv "$STAGE/shortx-rule-creator" "$SKILL_DIR"; then
   restore_old_payloads
-  rm -f "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW"
-  rm -rf "$STAGE"
+  rm -f "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW" "$INIT_NEW" "$SCRIPT_MANIFEST_NEW" "$SCRIPT_SIGNATURE_NEW" "$SCRIPT_PUBLIC_KEY_NEW"
+  rm -rf "$STAGE" "$SCRIPT_STAGE"
   fail "skills 安装失败，已恢复旧资源"
 fi
-if ! mv "$START_NEW" "$START_SCRIPT"; then
+if ! mv "$START_NEW" "$START_SCRIPT" || ! mv "$STOP_NEW" "$STOP_SCRIPT" || ! mv "$ROLLBACK_NEW" "$ROLLBACK_SCRIPT" || ! mv "$INIT_NEW" "$INIT_SCRIPT" || ! mv "$SCRIPT_MANIFEST_NEW" "$SCRIPT_MANIFEST_FILE" || ! mv "$SCRIPT_SIGNATURE_NEW" "$SCRIPT_SIGNATURE_FILE" || ! mv "$SCRIPT_PUBLIC_KEY_NEW" "$SCRIPT_PUBLIC_KEY_FILE"; then
   restore_old_payloads
-  rm -f "$SKILL_NEW" "$STOP_NEW" "$ROLLBACK_NEW"
-  rm -rf "$STAGE"
-  fail "start.sh 安装失败，已恢复旧资源"
-fi
-if ! mv "$STOP_NEW" "$STOP_SCRIPT"; then
-  restore_old_payloads
-  rm -f "$SKILL_NEW" "$ROLLBACK_NEW"
-  rm -rf "$STAGE"
-  fail "stop.sh 安装失败，已恢复旧资源"
-fi
-if ! mv "$ROLLBACK_NEW" "$ROLLBACK_SCRIPT"; then
-  restore_old_payloads
-  rm -f "$SKILL_NEW"
-  rm -rf "$STAGE"
-  fail "rollback.sh 安装失败，已恢复旧资源"
+  rm -f "$SKILL_NEW" "$START_NEW" "$STOP_NEW" "$ROLLBACK_NEW" "$INIT_NEW" "$SCRIPT_MANIFEST_NEW" "$SCRIPT_SIGNATURE_NEW" "$SCRIPT_PUBLIC_KEY_NEW"
+  rm -rf "$STAGE" "$SCRIPT_STAGE"
+  fail "启动脚本或完整性材料安装失败，已恢复旧资源"
 fi
 
-chmod 755 "$BINARY" "$START_SCRIPT" "$STOP_SCRIPT" "$ROLLBACK_SCRIPT" || {
+chmod 755 "$BINARY" "$INIT_SCRIPT" "$START_SCRIPT" "$STOP_SCRIPT" "$ROLLBACK_SCRIPT" || {
   restore_old_payloads
-  rm -f "$SKILL_NEW"
-  rm -rf "$STAGE"
+  rm -f "$SKILL_NEW" "$INIT_NEW" "$SCRIPT_MANIFEST_NEW" "$SCRIPT_SIGNATURE_NEW" "$SCRIPT_PUBLIC_KEY_NEW"
+  rm -rf "$STAGE" "$SCRIPT_STAGE"
   fail "启动资源权限设置失败，已恢复旧资源"
 }
+chmod 644 "$SCRIPT_MANIFEST_FILE" "$SCRIPT_SIGNATURE_FILE" "$SCRIPT_PUBLIC_KEY_FILE" 2>/dev/null || true
 chmod 700 "$SKILL_DIR" 2>/dev/null || true
-if ! binary_valid "$BINARY" "$ELF_CLASS" "$ELF_MACHINE" || ! skills_valid "$SKILL_DIR" || ! script_valid "$START_SCRIPT" || ! script_valid "$STOP_SCRIPT" || ! script_valid "$ROLLBACK_SCRIPT" || ! config_valid "$CONFIG" || [ "$(wc -c < "$MASTER_KEY" | tr -d ' \n\t')" != "32" ]; then
+if ! binary_valid "$BINARY" "$ELF_CLASS" "$ELF_MACHINE" || ! skills_valid "$SKILL_DIR" || ! script_valid "$INIT_SCRIPT" || ! script_valid "$START_SCRIPT" || ! script_valid "$STOP_SCRIPT" || ! script_valid "$ROLLBACK_SCRIPT" || ! integrity_valid "$REMOTE_VERSION" || ! config_valid "$CONFIG" || [ "$(wc -c < "$MASTER_KEY" | tr -d ' \n\t')" != "32" ]; then
   restore_old_payloads
-  rm -f "$SKILL_NEW"
-  rm -rf "$STAGE"
+  rm -f "$SKILL_NEW" "$INIT_NEW" "$SCRIPT_MANIFEST_NEW" "$SCRIPT_SIGNATURE_NEW" "$SCRIPT_PUBLIC_KEY_NEW"
+  rm -rf "$STAGE" "$SCRIPT_STAGE"
   fail "安装后完整性校验失败，已恢复旧资源且未写入完成标记"
 fi
 
@@ -337,8 +413,8 @@ if ! mv "$VERSION_NEW" "$BASE/config/version.json"; then
   rm -f "$VERSION_NEW"
   fail "提交版本标记失败，已恢复旧资源"
 fi
-rm -f "$BIN_OLD" "$BIN_NEW" "$SKILL_NEW" "$START_OLD" "$STOP_OLD" "$ROLLBACK_OLD"
-rm -rf "$SKILL_OLD" "$STAGE"
+rm -f "$BIN_OLD" "$BIN_NEW" "$SKILL_NEW" "$START_OLD" "$STOP_OLD" "$ROLLBACK_OLD" "$INIT_OLD" "$SCRIPT_MANIFEST_OLD" "$SCRIPT_SIGNATURE_OLD" "$SCRIPT_PUBLIC_KEY_OLD"
+rm -rf "$SKILL_OLD" "$STAGE" "$SCRIPT_STAGE"
 
 log "[DONE] Android 首次环境初始化完成：ABI=$ARCH_NAME、引擎、skills、启动脚本、停止脚本、配置、master.key 和目录均已就绪，版本 $REMOTE_VERSION"
 exit 0
